@@ -1,0 +1,3 @@
+
+class PacketEncodingError(Exception):
+    pass
