@@ -8,7 +8,6 @@ class Descriptor(FieldTypeAttribute):
     pass
 
 class StandardDescriptors:
-    Size     = Descriptor()
     Optional = Descriptor()
     Required = Descriptor()
     ExplicitTag = Descriptor()

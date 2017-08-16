@@ -6,7 +6,7 @@ class PacketFields:
     def __init__(self, **fieldInitialization):
         self._fields = {}
         for fieldName, fieldType in self.FIELDS:
-            self._fields[fieldName] = fieldType.createInstance()
+            self._fields[fieldName] = fieldType.CreateInstance(fieldType)
             if fieldName in fieldInitialization:
                 self._fields[fieldName].setData(fieldInitialization[fieldName])
                 

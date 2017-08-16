@@ -6,16 +6,17 @@ from playground.common.io import HighPerformanceStreamIO
 from playground.common import Version as PacketDefinitionVersion
 from playground.common import ReturnOrientedGenerator
 
-from playground.network.packet.fieldtypes.attributes import StandardDescriptors 
+from playground.network.packet.fieldtypes.attributes import StandardDescriptors, MaxValue, Bits
 from playground.network.packet.fieldtypes import ComplexFieldType, PacketFieldType, Uint, \
-                                                    PacketFields, NamedPacketType
+                                                    PacketFields, NamedPacketType, ListFieldType, \
+                                                    StringFieldType
 
 from .PacketEncoderBase import PacketEncoderBase
 from .PacketEncodingError import PacketEncodingError
 
 DECODE_WAITING_FOR_STREAM = PacketEncoderBase.DECODE_WAITING_FOR_STREAM
-Size, Optional = StandardDescriptors.Size, StandardDescriptors.Optional
-ExplicitTag    = StandardDescriptors.ExplicitTag
+Optional    = StandardDescriptors.Optional
+ExplicitTag = StandardDescriptors.ExplicitTag
 
 UNICODE_ENCODING = "utf-8" # used for converting strings to bytes and back.
 
@@ -71,30 +72,34 @@ class PlaygroundStandardPacketEncoder(PacketEncoderBase):
     @classmethod
     def _GetTypeKey(self, encodingType):
         """
-        Three scenarios:
+        Two scenarios:
         
         1. A Complex Type. We have to get the specific data type and generalizations
-        2. An instance of PacketFieldType. Get the class and generalizations
-        3. An actual class of PacketFieldType. Just return the class. No generalizations.
+        2. An instance of PacketFieldType or class. Get the class and generalizations
         """
+        
+        specificEncodingType = None
+        
+        # Unbox instances to classes where necessary
         if isinstance(encodingType, ComplexFieldType):
-            specificEncodingType = encodingType.dataType()
-            specificComplexType  = encodingType.__class__
+            complexType  = encodingType
+            specificEncodingType = complexType.dataType()
+            encodingType = encodingType.__class__
             
-            if not isinstance(specificEncodingType, type):
-                raise Exception("Playground Standard Packet Encoder only registers ComplexTypes with dataType classes.")
+            if isinstance(specificEncodingType, PacketFieldType):
+                specificEncodingType = specificEncodingType.__class__
             
-            for complexType in (specificComplexType,) + specificComplexType.__bases__:
-                for dataType in (specificEncodingType,) + specificEncodingType.__bases__:
-                    yield (complexType, dataType)
         elif isinstance(encodingType, PacketFieldType):
-            yield encodingType.__class__
-            for base in encodingType.__class__.__bases__:
-                yield base
-        elif isinstance(encodingType, type) and issubclass(encodingType, PacketFieldType):
-            yield encodingType
-        else:
-            raise Exception("Playground Standard Packet Encoder only registers FieldType classes or instances.")
+            encodingType = encodingType.__class__
+            
+        if not issubclass(encodingType, PacketFieldType):
+            raise Exception("Playground Standard Packet Encoder only registers proper PacketFieldType's.")
+        
+        for encodingTypeClass in (encodingType,) + encodingType.__bases__:
+            if not specificEncodingType: yield encodingTypeClass
+            else:
+                for specificEncodingTypeClass in (specificEncodingType,) + specificEncodingType.__bases__:
+                    yield (encodingTypeClass, specificEncodingTypeClass)
     
     @classmethod
     def RegisterTypeEncoder(cls, encodingType, encoder):
@@ -128,28 +133,54 @@ class PlaygroundStandardPacketEncoder(PacketEncoderBase):
 
         
 class UintEncoder:
-    SIZE_TO_PACKCODE =  {
-                        1:"!B",
-                        2:"!H",
-                        4:"!I",
-                        8:"!Q"
-                        }
+    SIZE_TO_PACKCODE =  [
+                        (2**8,"!B"),
+                        (2**16,"!H"),
+                        (2**32,"!I"),
+                        (2**64,"!Q")
+                        ]
+                        
+    DEFAULT_UINT_MAXVALUE = 2**32
+    
+    def _maxValueToPackCode(self, maxValue):
+        for packMaxValue, packCode in self.SIZE_TO_PACKCODE:
+            if maxValue < packMaxValue: break 
+        if maxValue >= packMaxValue:
+            raise PacketEncodingError("Playground Standard Encoder cannot encode uint's of size {}.".format(maxValue))
+        return packCode
                         
     def encode(self, stream, uint, topEncoder):
-        size = uint.getAttribute(Size, Uint.DEFAULT_SIZE)
-        if not size in self.SIZE_TO_PACKCODE:
-            raise PacketEncodingError("Playground Standard Encoder does not support uint of size {}.".format(size))
-        packCode = self.SIZE_TO_PACKCODE[size]
+        maxValue = PacketFieldType.GetAttribute(uint, MaxValue, self.DEFAULT_UINT_MAXVALUE)
+        packCode = self._maxValueToPackCode(maxValue)
         stream.pack(packCode, uint.data())
         
     def decodeIterator(self, stream, uint, topDecoder):
-        size = uint.getAttribute(Size, Uint.DEFAULT_SIZE)
-        if not size in self.SIZE_TO_PACKCODE:
-            raise PacketEncodingError("Playground Standard Encoder does not support uint of size {}.".format(size))
-        packCode = self.SIZE_TO_PACKCODE[size]
+        maxValue = PacketFieldType.GetAttribute(uint, MaxValue, self.DEFAULT_UINT_MAXVALUE)
+        packCode = self._maxValueToPackCode(maxValue)
         uintData = yield from stream.unpackIterator(packCode)
         uint.setData(uintData)
 PlaygroundStandardPacketEncoder.RegisterTypeEncoder(Uint, UintEncoder)
+
+class StringEncoder:
+    STRING_LENGTH_BYTES = 2
+    MAX_LENGTH = 2**(8*STRING_LENGTH_BYTES)
+    UNICODE_ENCODING = "utf-8"
+    
+    STR_PACK_CODE = "!H{}s"
+                        
+    def encode(self, stream, strField, topEncoder):
+        strLen = len(strField.data())
+        if len(strField.data()) > self.MAX_LENGTH:
+            raise PacketEncodingError("Playground Standard Encoder cannot encode string longer than {}".format(strLen))
+        strEncoded = strField.data().encode(self.UNICODE_ENCODING)
+        stream.pack(self.STR_PACK_CODE.format(strLen), strLen, strEncoded)
+        
+    def decodeIterator(self, stream, strField, topDecoder):
+        strLen = yield from stream.unpackIterator("!H")
+        strEncoded = yield from stream.unpackIterator("{}s".format(strLen))
+        strDecoded = strEncoded.decode(self.UNICODE_ENCODING)
+        strField.setData(strDecoded)
+PlaygroundStandardPacketEncoder.RegisterTypeEncoder(StringFieldType, StringEncoder)
 
 class PacketFieldsEncoder:
     FIELD_TAG_PACK_CODE = "!H"
@@ -162,7 +193,7 @@ class PacketFieldsEncoder:
         for fieldName, fieldType in fields:
             if fieldName in fieldToTag:
                 raise Exception("Duplicate Field")
-            tag = fieldType.getAttribute(ExplicitTag, None)
+            tag = PacketFieldType.GetAttribute(fieldType, ExplicitTag, None)
             if tag != None and tag in fieldToTag.inverse():
                 raise Exception("Duplicate Explicit Tag")
             if tag == None:
@@ -181,7 +212,7 @@ class PacketFieldsEncoder:
         for fieldName, fieldType in packetFields.FIELDS:
             rawField = packetFields.__getrawfield__(fieldName)
             if rawField.data() == PacketFieldType.UNSET:
-                if rawField.getAttribute(Optional, False) == True:
+                if PacketFieldType.GetAttribute(rawField, Optional, False) == True:
                     continue
                 else:
                     raise PacketEncodingError("Field '{}' is unset and not marked as optional.".format(fieldName))   
@@ -216,6 +247,26 @@ class PacketFieldsEncoder:
             except Exception as encodingException:
                 raise PacketEncodingError("Error decoding field {}.".format(fieldName)) from encodingException
 PlaygroundStandardPacketEncoder.RegisterTypeEncoder(ComplexFieldType(PacketFields), PacketFieldsEncoder)
+
+class ListEncoder:
+    LIST_SIZE_PACK_CODE = "!H"
+    
+    def encode(self, stream, listType, topEncoder):
+        stream.pack(self.LIST_SIZE_PACK_CODE, len(listType))
+        for i in range(len(listType)):
+            topEncoder.encode(stream, listType.__getrawitem__(i))
+            
+    def decodeIterator(self, stream, listType, topDecoder):
+        listSize = yield from stream.unpackIterator(self.LIST_SIZE_PACK_CODE)
+        for i in range(listSize):
+            listType.append(PacketFieldType.UNSET) # Create a "null" entry in the list
+            rawListData = listType.__getrawitem__(-1)
+            try:
+                yield from topDecoder.decodeIterator(stream, rawListData)
+            except Exception as encodingException:
+                raise PacketEncodingError("Error decoding index {} of list of type {}".format(i, listType.dataType()))
+PlaygroundStandardPacketEncoder.RegisterTypeEncoder(ListFieldType(PacketFieldType), ListEncoder)
+    
         
 class PacketEncoder:
     PacketIdentifierTemplate = "!B{}sB{}s" # Length followed by length-string
@@ -263,9 +314,36 @@ def basicUnitTest():
     encoder.decode(stream, uint2)
     assert uint2.data() == uint1.data()
     
+    listfield1 = ListFieldType(Uint)
+    listfield2 = ListFieldType(Uint)
+    listfield1.append(10)
+    listfield1.append(100)
+    listfield1.append(1000)
+    
+    stream = io.BytesIO()
+    encoder.encode(stream, listfield1)
+    stream.seek(0)
+    encoder.decode(stream, listfield2)
+    
+    assert len(listfield1) == len(listfield2)
+    for i in range(len(listfield1)):
+        assert listfield1[i] == listfield2[i]
+    
+    str1 = StringFieldType()
+    str2 = StringFieldType()
+    str1.setData("Test1 string")
+    
+    stream = io.BytesIO()
+    encoder.encode(stream, str1)
+    stream.seek(0)
+    encoder.decode(stream, str2)
+    
+    assert str1.data() == str2.data()
+    
     class SomeFields(PacketFields):
-        FIELDS = [  ("field1", Uint(Size=2)),
-                    ("field2", Uint(Size=4))
+        FIELDS = [  ("field1", Uint({Bits:32})),
+                    ("field2", Uint({Bits:32})),
+                    ("list1",  ListFieldType(Uint({Bits:8})))
                     ]
     
     fields1Field = ComplexFieldType(SomeFields)
@@ -274,6 +352,8 @@ def basicUnitTest():
     fields1 = SomeFields()
     fields1.field1 = 50
     fields1.field2 = 500
+    fields1.list1.append(0)
+    fields1.list1.append(255)
     
     fields1Field.setData(fields1)
     fields2Field.setData(SomeFields())
@@ -287,6 +367,9 @@ def basicUnitTest():
     
     assert fields1.field1 == fields2.field1
     assert fields1.field2 == fields2.field2
+    assert len(fields1.list1) == len(fields2.list1)
+    assert fields1.list1[0] == fields2.list1[0]
+    assert fields1.list1[-1] == fields2.list1[-1]
     
     # Packet not tested in this file. See basicUnitTest in PacketType.py
     

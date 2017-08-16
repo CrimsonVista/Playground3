@@ -2,7 +2,9 @@ import io
 
 from playground.common import Version as PacketDefinitionVersion
 from playground.network.packet.encoders import DefaultPacketEncoder
-from playground.network.packet.fieldtypes import NamedPacketType, ComplexFieldType, PacketFields, Uint
+from playground.network.packet.fieldtypes import NamedPacketType, ComplexFieldType, PacketFields, Uint, \
+                                                    StringFieldType
+from playground.network.packet.fieldtypes.attributes import MaxValue, Bits                                                  
 from .PacketDefinitionRegistration import g_DefaultPacketDefinitions
 
 
@@ -132,10 +134,11 @@ def basicUnitTest():
         DEFINITION_VERSION    = "1.0"
         
         class SubFields(PacketFields):
-            FIELDS = [("subfield1",Uint(Size=4)), ("subfield2",Uint(Size=2))]
+            FIELDS = [("subfield1",Uint({Bits:16})), ("subfield2",Uint({Bits:16}))]
         
         FIELDS = [  ("header", ComplexFieldType(SubFields)), 
-                    ("field1", Uint(Size=1)), 
+                    ("field1", Uint({MaxValue:1000})), 
+                    ("field2", StringFieldType),
                     ("trailer",ComplexFieldType(SubFields))]
     
     packet = TestPacket1()
@@ -145,13 +148,15 @@ def basicUnitTest():
     packet.header.subfield1 = 1
     packet.header.subfield2 = 100
     packet.field1 = 50
+    packet.field2 = "test packet field 2"
     packet.trailer.subfield1 = 5
     packet.trailer.subfield2 = 500
     
     serializedData = packet.__serialize__()
     restoredPacket = PacketType.Deserialize(serializedData)
     
-    assert packet.header.subfield1 == restoredPacket.header.subfield1   
+    assert packet.header.subfield1 == restoredPacket.header.subfield1 
+    assert packet.field2 == restoredPacket.field2
 
 if __name__=="__main__":
     basicUnitTest()

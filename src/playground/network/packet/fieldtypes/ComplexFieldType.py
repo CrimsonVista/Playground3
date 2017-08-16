@@ -2,8 +2,15 @@
 from .PacketFieldType import PacketFieldType
 
 class ComplexFieldType(PacketFieldType):
-    def __init__(self, dataType, **attributes):
-        super().__init__(**attributes)
+    @classmethod
+    def _CreateInstance(cls):
+        """
+        Default is ComplexFieldType(PacketFieldType)
+        """
+        return cls(PacketFieldType)
+        
+    def __init__(self, dataType, attributes=None):
+        super().__init__(attributes)
         self._dataType = dataType
         
     def dataType(self):
@@ -14,13 +21,13 @@ class ComplexFieldType(PacketFieldType):
             self._data = self._dataType()
         # TODO: Warnings, Errors, etc?
         
-    def setData(self, data):
+    def _setTypedData(self, data):
         if not isinstance(data, self._dataType):
             raise ValueError("Invalid data for ComplexFieldType. Must be of type {}.".format(self._dataType))
-        super().setData(data)
+        super()._setTypedData(data)
         
-    def createInstance(self):
+    def clone(self):
         cls = self.__class__
-        instance = cls(self._dataType, **self._attributes)
+        instance = cls(self._dataType, self._attributes)
         return instance
 
