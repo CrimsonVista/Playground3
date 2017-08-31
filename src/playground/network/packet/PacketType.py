@@ -1,12 +1,14 @@
 import io
 
 from playground.common import Version as PacketDefinitionVersion
+from playground.common.io import HighPerformanceStreamIO
 from playground.network.packet.encoders import DefaultPacketEncoder
 from playground.network.packet.fieldtypes import NamedPacketType, ComplexFieldType, PacketFields, Uint, \
-                                                    StringFieldType
+                                                    StringFieldType, PacketFieldType
 from playground.network.packet.fieldtypes.attributes import MaxValue, Bits                                                  
 from .PacketDefinitionRegistration import g_DefaultPacketDefinitions
 
+FIELD_NOT_SET = PacketFieldType.UNSET
 
 class PacketDefinitionLoader(type):
     """
@@ -108,6 +110,40 @@ class PacketType(NamedPacketType, metaclass=PacketDefinitionLoader):
         if not isinstance(packet, cls):
             raise Exception("Deserialized packet of class {} but expected class {}.".format(packet.__class__, cls))
         return packet
+        
+    @classmethod
+    def Deserializer(cls, stream=None, errHandler=None):
+        class ConcreteDeserializer:
+            def __init__(self, underlyingStream, errHandler):
+                """
+                Underlying stream must support "update"
+                """
+                self._stream = (underlyingStream == None and HighPerformanceStreamIO() or underlyingStream)
+                self._iterator = cls.DeserializeStream(self._stream)
+                self._errHandler = errHandler
+                
+            def update(self, buffer):
+                self._stream.update(buffer)
+            def nextPackets(self):
+                """
+                The packet DeserializeStream iterator yields not ready until
+                it finally has the packet, which it returns (via StopIteration)
+                """
+                exhausted = False
+                while not exhausted:
+                    try:
+                        notReady = next(self._iterator)
+                        # No more messages until more data. We're done.
+                        exhausted = True
+                    except StopIteration as result:
+                        # we got a message!
+                        yield result.value
+                        # get new iterator
+                        self._iterator = cls.DeserializeStream(self._stream)
+                    except Exception as error:
+                        if self._errHandler: self._errhandler.handleException(error)
+                        # if no error handler, simply drop errors.
+        return ConcreteDeserializer(stream, errHandler)
 
     DEFINITION_IDENTIFIER = "__abstract__.PacketType"
     DEFINITION_VERSION = "0.0"

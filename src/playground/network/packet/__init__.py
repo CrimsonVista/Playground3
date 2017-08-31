@@ -1,2 +1,2 @@
 
-from .PacketType   import PacketType
+from .PacketType   import PacketType, FIELD_NOT_SET

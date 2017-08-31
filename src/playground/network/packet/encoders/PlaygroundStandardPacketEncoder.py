@@ -6,17 +6,15 @@ from playground.common.io import HighPerformanceStreamIO
 from playground.common import Version as PacketDefinitionVersion
 from playground.common import ReturnOrientedGenerator
 
-from playground.network.packet.fieldtypes.attributes import StandardDescriptors, MaxValue, Bits
+from playground.network.packet.fieldtypes.attributes import Optional, ExplicitTag, MaxValue, Bits
 from playground.network.packet.fieldtypes import ComplexFieldType, PacketFieldType, Uint, \
                                                     PacketFields, NamedPacketType, ListFieldType, \
-                                                    StringFieldType
+                                                    StringFieldType, BufferFieldType
 
 from .PacketEncoderBase import PacketEncoderBase
 from .PacketEncodingError import PacketEncodingError
 
 DECODE_WAITING_FOR_STREAM = PacketEncoderBase.DECODE_WAITING_FOR_STREAM
-Optional    = StandardDescriptors.Optional
-ExplicitTag = StandardDescriptors.ExplicitTag
 
 UNICODE_ENCODING = "utf-8" # used for converting strings to bytes and back.
 
@@ -31,6 +29,10 @@ class EncoderStreamAdapter(object):
         self._stream = stream
         
     def available(self):
+        """
+        This is duplicate functionality if we have a HighPerformanceStreamIO.
+        But we also want to support those that aren't. TODO: Better solution?
+        """
         curPos = self._stream.tell()
         self._stream.seek(0, SEEK_END)
         endPos = self._stream.tell()
@@ -64,7 +66,18 @@ class EncoderStreamAdapter(object):
             return unpackedData[0]
         else:
             return unpackedData
-                
+
+def iterateClassAncestors(cls, terminals=None):
+    if terminals == None:
+        terminals = []
+        
+    queue = [cls]
+    while queue:
+        nextClass = queue.pop(0)
+        if nextClass not in terminals:
+            for base in nextClass.__bases__:
+                queue.append(base)
+        yield nextClass
 
 class PlaygroundStandardPacketEncoder(PacketEncoderBase):
     __TypeEncoders = {}
@@ -95,10 +108,10 @@ class PlaygroundStandardPacketEncoder(PacketEncoderBase):
         if not issubclass(encodingType, PacketFieldType):
             raise Exception("Playground Standard Packet Encoder only registers proper PacketFieldType's.")
         
-        for encodingTypeClass in (encodingType,) + encodingType.__bases__:
+        for encodingTypeClass in iterateClassAncestors(encodingType, terminals=[PacketFieldType, ComplexFieldType]):
             if not specificEncodingType: yield encodingTypeClass
             else:
-                for specificEncodingTypeClass in (specificEncodingType,) + specificEncodingType.__bases__:
+                for specificEncodingTypeClass in iterateClassAncestors(specificEncodingType, terminals=[PacketFieldType]):
                     yield (encodingTypeClass, specificEncodingTypeClass)
     
     @classmethod
@@ -181,6 +194,24 @@ class StringEncoder:
         strDecoded = strEncoded.decode(self.UNICODE_ENCODING)
         strField.setData(strDecoded)
 PlaygroundStandardPacketEncoder.RegisterTypeEncoder(StringFieldType, StringEncoder)
+
+class BufferEncoder:
+    BUFFER_LENGTH_BYTES = 8
+    MAX_LENGTH = 2**(8*BUFFER_LENGTH_BYTES)
+    
+    BUF_PACK_CODE = "!Q{}s"
+                        
+    def encode(self, stream, bufField, topEncoder):
+        bufLen = len(bufField.data())
+        if bufLen > self.MAX_LENGTH:
+            raise PacketEncodingError("Playground Standard Encoder cannot encode buffer longer than {}".format(bufLen))
+        stream.pack(self.BUF_PACK_CODE.format(bufLen), bufLen, bufField.data())
+        
+    def decodeIterator(self, stream, bufField, topDecoder):
+        bufLen = yield from stream.unpackIterator("!Q")
+        bufData = yield from stream.unpackIterator("{}s".format(bufLen))
+        bufField.setData(bufData)
+PlaygroundStandardPacketEncoder.RegisterTypeEncoder(BufferFieldType, BufferEncoder)
 
 class PacketFieldsEncoder:
     FIELD_TAG_PACK_CODE = "!H"

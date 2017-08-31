@@ -50,7 +50,7 @@ class PacketFieldType:
                         baseAttributes += baseAttr.baseAttributes()
                 if isinstance(attr, Validator):
                     self._validators.add(attr)
-        self._data = None
+        self._data = self.UNSET
         
     def setData(self, data):
         if data == self.UNSET:
@@ -72,10 +72,17 @@ class PacketFieldType:
     def data(self):
         return self._data
         
-    def clone(self):
-        cls = self.__class__
-        instance = cls(self._attributes)
-        return instance
-        
     def _getAttribute(self, attr, default=None):
         return self._attributes.get(attr, default)
+        
+    def __call__(self, newAttributes=None):
+        cloneAttributes = {}
+        cloneAttributes.update(self._attributes)
+        if newAttributes:
+            cloneAttributes.update(newAttributes)
+        cls = self.__class__
+        instance = cls(cloneAttributes)
+        return instance
+        
+    #def __repr__(self):
+    #    return 

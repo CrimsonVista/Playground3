@@ -7,7 +7,7 @@ class Descriptor(FieldTypeAttribute):
     """
     pass
 
-class StandardDescriptors:
-    Optional = Descriptor()
-    Required = Descriptor()
-    ExplicitTag = Descriptor()
+
+Optional = Descriptor()
+Required = Descriptor()
+ExplicitTag = Descriptor()

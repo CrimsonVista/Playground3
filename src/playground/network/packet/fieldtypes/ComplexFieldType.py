@@ -26,8 +26,14 @@ class ComplexFieldType(PacketFieldType):
             raise ValueError("Invalid data for ComplexFieldType. Must be of type {}.".format(self._dataType))
         super()._setTypedData(data)
         
-    def clone(self):
+    def __call__(self, newAttributes=None):
         cls = self.__class__
-        instance = cls(self._dataType, self._attributes)
+        cloneAttributes = {}
+        cloneAttributes.update(self._attributes)
+        if newAttributes: cloneAttributes.update(newAttributes)
+        instance = cls(self._dataType, cloneAttributes)
         return instance
+        
+    def __repr__(self):
+        return "ComplexFieldType({})".format(self._dataType)
 

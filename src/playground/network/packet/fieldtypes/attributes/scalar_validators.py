@@ -23,7 +23,7 @@ class BitsValidator(MaxValueValidator):
         
     def translateAttributeValue(self, base, attrValue):
         if base == MaxValue:
-            return 2**attrValue
+            return (2**attrValue)-1
         else:
             return super().translateAttributeValue(base, attrValue)
 Bits = BitsValidator()
