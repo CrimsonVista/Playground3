@@ -16,7 +16,7 @@ class ListFieldType(ComplexFieldType):
             if self != data:
                 self._dataList = []
                 for otherField in data._dataList:
-                    self._dataList.append(otherField.data())        
+                    self.append(otherField.data())        
         elif isinstance(data, list):
             self._dataList = []
             for dataElement in data:
