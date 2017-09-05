@@ -35,5 +35,5 @@ class ComplexFieldType(PacketFieldType):
         return instance
         
     def __repr__(self):
-        return "ComplexFieldType({})".format(self._dataType)
+        return "{}({})".format(self.__class__.__name__, self._dataType)
 

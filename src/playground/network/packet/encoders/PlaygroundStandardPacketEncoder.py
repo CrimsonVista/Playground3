@@ -92,6 +92,7 @@ class PlaygroundStandardPacketEncoder(PacketEncoderBase):
         """
         
         specificEncodingType = None
+        complexType = None
         
         # Unbox instances to classes where necessary
         if isinstance(encodingType, ComplexFieldType):
@@ -104,9 +105,12 @@ class PlaygroundStandardPacketEncoder(PacketEncoderBase):
             
         elif isinstance(encodingType, PacketFieldType):
             encodingType = encodingType.__class__
-            
-        if not issubclass(encodingType, PacketFieldType):
-            raise Exception("Playground Standard Packet Encoder only registers proper PacketFieldType's.")
+
+        try:
+            if not issubclass(encodingType, PacketFieldType):
+                raise Exception("Playground Standard Packet Encoder only registers proper PacketFieldType's.")
+        except:
+            raise Exception("Playground Standard Packet Encoder only registers proper PacketFieldType's")
         
         for encodingTypeClass in iterateClassAncestors(encodingType, terminals=[PacketFieldType, ComplexFieldType]):
             if not specificEncodingType: yield encodingTypeClass

@@ -20,7 +20,7 @@ class ListFieldType(ComplexFieldType):
         elif isinstance(data, list):
             self._dataList = []
             for dataElement in data:
-                self._dataList.append(dataElement)
+                self.append(dataElement)
         else:
             raise ValueError("Cannot set a ListFieldType to {}".data)
         # The real data is stored in _dataList. But we use _data to determine
@@ -37,10 +37,10 @@ class ListFieldType(ComplexFieldType):
         
     def append(self, data):
         # append initializes data.
-        self._data = 0
         
         self._dataList.append(self.dataType()())
         self._dataList[-1].setData(data)
+        self._data = len(self._dataList)
         
     def pop(self, index=-1):
         self._dataList.pop(index)
