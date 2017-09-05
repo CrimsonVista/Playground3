@@ -31,4 +31,4 @@ class TestLoopEx(TestLoop):
         protocol = factory()
         transport = self._transportFactory(protocol, addr, port)
         protocol.connection_made(transport)
-        return (protocol, transport)
+        return (transport, protocol)

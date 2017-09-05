@@ -1,8 +1,10 @@
 
 from playground.network.protocols.packets.vsocket_packets import VNICSocketOpenPacket,              \
                                                                     VNICSocketOpenResponsePacket,   \
-                                                                    VNICConnectionSpawnedPacket
+                                                                    VNICConnectionSpawnedPacket, PacketType
+from playground.network.common import StackingProtocol, StackingTransport
 from playground.common import CustomConstant as Constant
+
 
 from asyncio import Protocol
 import asyncio
@@ -32,10 +34,11 @@ class SocketControl:
         """
         if not self._closed:
             self._closed = True
-            for portKey in self._spawnedConnectionKeys():
-                self._vnic.closeConnection(portKey)
+            portKeys = self._spawnedConnectionKeys
             self._spawnedConnectionKeys = set([])
-            self._port != None and self._vnic.close(self._port)
+            for portKey in portKeys:
+                self.device().closeConnection(portKey)
+            self._port != None and self.device().closePort(self._port)
             self._controlProtocol.transport.close()
         
     def closeSpawnedConnection(self, portKey):
@@ -48,7 +51,7 @@ class SocketControl:
             self.close()
         else:
             # inbound connections can have many. Just close this one.
-            self._vnic.closeConnection(portKey)
+            self.device().closeConnection(portKey)
 
     def spawnedConnectionClosed(self, portKey):
         """
@@ -90,7 +93,7 @@ class SocketControl:
             self.close()
         
         else:
-            protocol, transport = futureConnection.result()
+            transport, protocol = futureConnection.result()
             
             self._spawnedConnectionKeys.add(protocol._portKey)
             self.device().spawnConnection(protocol._portKey, protocol)
@@ -105,10 +108,10 @@ class ReverseOutboundSocketProtocol(Protocol):
         self.transport = None
     def connection_made(self, transport):
         self.transport = transport
-    def dataReceived(self, data):
+    def data_received(self, data):
         self._control.device().write(self._portKey, data)
-    def connection_lost(self):
-        self._control.close(self._portKey)
+    def connection_lost(self, reason=None):
+        self._control.closeSpawnedConnection(self._portKey)
 
 class VNICSocketControlProtocol(Protocol):
 
@@ -139,7 +142,7 @@ class VNICSocketControlProtocol(Protocol):
     def connection_lost(self, reason=None):
         self._control and self._control.close()
         
-    def dataReceived(self, data):
+    def data_received(self, data):
         self._deserializer.update(data)
         for controlPacket in self._deserializer.nextPackets():
             if isinstance(controlPacket, VNICSocketOpenPacket):
@@ -203,3 +206,107 @@ class VNICSocketControlProtocol(Protocol):
                                                     destinationPort = portKey.destinationPort)
 
         self.transport.write(eventPacket.__serialize__())
+        
+class VNICConnectProtocol(Protocol):
+    
+    def __init__(self, destination, destinationPort, callbackService, applicationProtocolFactory):
+        self.transport = None
+        self._applicationProtocolFactory = applicationProtocolFactory
+        self._destination = destination
+        self._destinationPort = destinationPort
+        self._callbackService = callbackService
+        self._deserializer = PacketType.Deserializer()
+        self._outboundPort = None
+    
+    def connection_made(self, transport):
+        self._transport = transport
+        
+        callbackAddr, callbackPort = self._callbackService.location()
+        openSocketPacket = VNICSocketOpenPacket(callbackAddress=callbackAddr, callbackPort=callbackPort)
+        openSocketPacket.connectData = openSocketPacket.SocketConnectData(destination=self._destination, destinationPort=self._destinationPort)
+        self._transport.write(openSocketPacket.__serialize__())
+    
+    def data_received(self, data):
+        self._deserializer.update(data)
+        for packet in self._deserializer.nextPackets():
+            if isinstance(packet, VNICSocketOpenResponsePacket):
+                if packet.isFailure():
+                    self._transport.close()
+                else:
+                    self._outboundPort = packet.port
+            elif isinstance(packet, VNICConnectionSpawnedPacket):
+                self._callbackService.completeCallback(self, self._applicationProtocolFactory(),
+                                                        packet.spawnTcpPort, 
+                                                        packet.source, packet.sourcePort, 
+                                                        packet.destination, packet.destinationPort)
+        
+    def connection_lost(self, reason=None):
+        pass # log?
+        
+class VNICListenProtocol(Protocol):
+    
+    def __init__(self, listenPort, callbackService, applicationProtocolFactory):
+        self.transport = None
+        self._callbackService = callbackService
+        self._applicationProtocolFactory = applicationProtocolFactory
+        self._listenPort   = listenPort
+        self._deserializer = PacketType.Deserializer()    
+    
+    def connection_made(self, transport):
+        self.transport = transport
+        
+        callbackAddr, callbackPort = self._callbackService.location()
+        openSocketPacket = VNICSocketOpenPacket(callbackAddress=callbackAddr, callbackPort=callbackPort)
+        openSocketPacket.listenData = openSocketPacket.SocketListenData(sourcePort = self._listenPort)
+        
+        self.transport.write(openSocketPacket.__serialize__())
+    
+    def data_received(self, data):
+        self._deserializer.update(data)
+        for packet in self._deserializer.nextPackets():
+            if isinstance(packet, VNICSocketOpenResponsePacket):
+                if packet.isFailure():
+                    self.transport.close()
+                else:
+                    pass # Log?
+            elif isinstance(packet, VNICConnectionSpawnedPacket):
+                self._callbackService.completeCallback(self, self._applicationProtocolFactory(), 
+                                                        packet.spawnTcpPort, 
+                                                        packet.source, packet.sourcePort, 
+                                                        packet.destination, packet.destinationPort)
+        
+    def connection_lost(self, reason=None):
+        pass # log?
+        
+class VNICCallbackProtocol(StackingProtocol):
+    def __init__(self, callbackService, higherProtocol=None):
+        super().__init__(higherProtocol)
+        self.transport = None
+        self._callbackService = callbackService
+        self._spawnPort = None
+        
+    def connection_made(self, transport):
+        super().connection_made(transport)
+        self.transport = transport
+        self._spawnPort = transport.get_extra_info("peername")[1]
+        self._callbackService.newDataConnection(self._spawnPort, self)
+        
+    def setPlaygroundConnectionInfo(self, application, source, sourcePort, destination, destinationPort):
+        nextTransport = StackingTransport(self.transport, {"sockname":(source, sourcePort),
+                                                            "peername":(destination, destinationPort)})
+        p = self
+        while p.higherProtocol():
+            p = p.higherProtocol()
+        p.setHigherProtocol(application)
+        self.higherProtocol().connection_made(nextTransport)
+
+    def connection_lost(self, reason=None):
+        super().connection_lost(reason)
+        self.higherProtocol().transport.close()
+        self.higherProtocol().connection_lost(reason)
+        if self._spawnPort:
+            self._callbackService.dataConnectionClosed(self, self._spawnPort)
+            
+    def data_received(self, buf):
+        if self.higherProtocol():
+            self.higherProtocol().data_received(buf)

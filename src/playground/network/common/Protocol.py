@@ -5,7 +5,7 @@ Created on Oct 23, 2013
 
 @author: sethjn
 '''
-
+from playground.common import CustomConstant as Constant
 from asyncio import Protocol, Transport
 
 class StackingProtocolFactory:
@@ -42,17 +42,45 @@ class StackingProtocolFactory:
         return protocol
        
 class StackingProtocol(Protocol):
+    
     def __init__(self, higherProtocol=None):
         self._higherProtocol = higherProtocol
+        self.transport = None
         
     def higherProtocol(self):
         return self._higherProtocol
+        
+    def setHigherProtocol(self, higherProtocol):
+        self._higherProtocol = higherProtocol # error if already set?
     
 class StackingTransport(Transport):
     
     def __init__(self, lowerTransport, extra=None):
         super().__init__(extra)
         self._lowerTransport = lowerTransport
+        if self.get_extra_info("sockname", None) == None:
+            self._extra["sockname"] = lowerTransport.get_extra_info("sockname", None)
+        if self.get_extra_info("peername", None) == None:
+            self._extra["peername"] = lowerTransport.get_extra_info("peername", None)
+            
+    def lowerTransport():
+        return self._lowerTransport
+    
+    def close(self):
+        return self._lowerTransport.close()
+        
+    def is_closing(self):
+        return self._lowerTransport.is_closing()
+        
+    def abort(self):
+        return self._lowerTransport.abort()
+        
+    def write(self, data):
+        return self._lowerTransport.write(data)
+        
+    def writelines(self, iterable):
+        for i in iterable:
+            self.write(i)
 
 
 """        

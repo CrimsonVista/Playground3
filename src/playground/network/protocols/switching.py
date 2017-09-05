@@ -27,7 +27,7 @@ class PlaygroundSwitchRxProtocol(Protocol):
     def connection_made(self, transport):
         self.transport = transport
         
-    def dataReceived(self, buf):
+    def data_received(self, buf):
         self._deserializer.update(buf)
         for packet in self._deserializer.nextPackets():
             if isinstance(packet, AnnounceLinkPacket):
@@ -92,6 +92,7 @@ class PlaygroundSwitchTxProtocol(Protocol):
         self.transport = transport
         announceLinkPacket = AnnounceLinkPacket(address=self._address)
         self.transport.write(announceLinkPacket.__serialize__())
+        self._demuxer.connected()
         
     def write(self, source, sourcePort, destination, destinationPort, data):
         wirePacket = WirePacket(source          = source,
@@ -120,7 +121,7 @@ class PlaygroundSwitchTxProtocol(Protocol):
             # transmit packet
             self.transport.write(wirePacket.__serialize__())
         
-    def dataReceived(self, data):
+    def data_received(self, data):
         self._deserializer.update(data)
         demuxData = None
         for wirePacket in self._deserializer.nextPackets():
@@ -138,6 +139,9 @@ class PlaygroundSwitchTxProtocol(Protocol):
                 self._demuxer.demux(wirePacket.source, wirePacket.sourcePort, 
                                     wirePacket.destination, wirePacket.destinationPort,
                                     demuxData)
+                                    
+    def connection_lost(self, reason=None):
+        self._demuxer.disconnected()
                                     
 
 def basicUnitTest():
@@ -160,6 +164,10 @@ def basicUnitTest():
             return self.addresses[destination]
         def handleExtensionPacket(self, ep):
             self.extensionPackets.append(ep)
+        def connected(self):
+            pass
+        def disconnected(self):
+            pass
     class MockClient:
         def __init__(self):
             self.results = []

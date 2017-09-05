@@ -7,7 +7,7 @@ from playground.common import Version as PacketDefinitionVersion
 from playground.common import ReturnOrientedGenerator
 
 from playground.network.packet.fieldtypes.attributes import Optional, ExplicitTag, MaxValue, Bits
-from playground.network.packet.fieldtypes import ComplexFieldType, PacketFieldType, Uint, \
+from playground.network.packet.fieldtypes import ComplexFieldType, PacketFieldType, UINT, INT, BOOL, \
                                                     PacketFields, NamedPacketType, ListFieldType, \
                                                     StringFieldType, BufferFieldType
 
@@ -144,8 +144,21 @@ class PlaygroundStandardPacketEncoder(PacketEncoderBase):
             raise PacketEncodingError("Cannot decode fields of type {}".format(fieldType))
         yield from typeDecoder().decodeIterator(EncoderStreamAdapter.Adapt(stream), fieldType, self)
 
+
+class IntrinsicTypeStandardEncoder:
+    def _getPackCode(self, fieldType):
+        raise Exception("Must be overridden in sub classes")
+    
+    def encode(self, stream, fieldType, topEncoder):
+        packCode = self._getPackCode(fieldType)
+        stream.pack(packCode, fieldType.data())
         
-class UintEncoder:
+    def decodeIterator(self, stream, fieldType, topDecoder):
+        packCode = self._getPackCode(fieldType)
+        data = yield from stream.unpackIterator(packCode)
+        fieldType.setData(data)    
+        
+class UintEncoder(IntrinsicTypeStandardEncoder):
     SIZE_TO_PACKCODE =  [
                         (2**8,"!B"),
                         (2**16,"!H"),
@@ -153,7 +166,12 @@ class UintEncoder:
                         (2**64,"!Q")
                         ]
                         
-    DEFAULT_UINT_MAXVALUE = 2**32
+    DEFAULT_MAXVALUE = (2**32)-1
+    
+    def _getPackCode(self, fieldType):
+        maxValue = PacketFieldType.GetAttribute(fieldType, MaxValue, self.DEFAULT_MAXVALUE)
+        packCode = self._maxValueToPackCode(maxValue)
+        return packCode
     
     def _maxValueToPackCode(self, maxValue):
         for packMaxValue, packCode in self.SIZE_TO_PACKCODE:
@@ -161,18 +179,21 @@ class UintEncoder:
         if maxValue >= packMaxValue:
             raise PacketEncodingError("Playground Standard Encoder cannot encode uint's of size {}.".format(maxValue))
         return packCode
-                        
-    def encode(self, stream, uint, topEncoder):
-        maxValue = PacketFieldType.GetAttribute(uint, MaxValue, self.DEFAULT_UINT_MAXVALUE)
-        packCode = self._maxValueToPackCode(maxValue)
-        stream.pack(packCode, uint.data())
-        
-    def decodeIterator(self, stream, uint, topDecoder):
-        maxValue = PacketFieldType.GetAttribute(uint, MaxValue, self.DEFAULT_UINT_MAXVALUE)
-        packCode = self._maxValueToPackCode(maxValue)
-        uintData = yield from stream.unpackIterator(packCode)
-        uint.setData(uintData)
-PlaygroundStandardPacketEncoder.RegisterTypeEncoder(Uint, UintEncoder)
+PlaygroundStandardPacketEncoder.RegisterTypeEncoder(UINT, UintEncoder)
+
+class IntEncoder(UintEncoder):
+    SIZE_TO_PACKCODE =  [
+                        (2**8,"!b"),
+                        (2**16,"!h"),
+                        (2**32,"!i"),
+                        (2**64,"!q")
+                        ]
+PlaygroundStandardPacketEncoder.RegisterTypeEncoder(INT, IntEncoder)
+
+class BoolEncoder(IntrinsicTypeStandardEncoder):
+    def _getPackCode(self, fieldType):
+        return "!?"
+PlaygroundStandardPacketEncoder.RegisterTypeEncoder(BOOL, BoolEncoder)
 
 class StringEncoder:
     STRING_LENGTH_BYTES = 2
@@ -335,7 +356,9 @@ PlaygroundStandardPacketEncoder.RegisterTypeEncoder(ComplexFieldType(NamedPacket
 def basicUnitTest():
     import io
     
-    uint1, uint2 = Uint(), Uint()
+    uint1, uint2 = UINT(), UINT()
+    int1, int2 = INT(), INT()
+    bool1, bool2 = BOOL(), BOOL()
     stream = io.BytesIO()
     encoder = PlaygroundStandardPacketEncoder()
     
@@ -345,8 +368,22 @@ def basicUnitTest():
     encoder.decode(stream, uint2)
     assert uint2.data() == uint1.data()
     
-    listfield1 = ListFieldType(Uint)
-    listfield2 = ListFieldType(Uint)
+    stream = io.BytesIO()
+    int1.setData(-10)
+    encoder.encode(stream, int1)
+    stream.seek(0)
+    encoder.decode(stream, int2)
+    assert int1.data() == int2.data()
+    
+    stream = io.BytesIO()
+    bool1.setData(False)
+    encoder.encode(stream, bool1)
+    stream.seek(0)
+    encoder.decode(stream, bool2)
+    assert bool1.data() == bool2.data()
+    
+    listfield1 = ListFieldType(UINT)
+    listfield2 = ListFieldType(UINT)
     listfield1.append(10)
     listfield1.append(100)
     listfield1.append(1000)
@@ -372,9 +409,9 @@ def basicUnitTest():
     assert str1.data() == str2.data()
     
     class SomeFields(PacketFields):
-        FIELDS = [  ("field1", Uint({Bits:32})),
-                    ("field2", Uint({Bits:32})),
-                    ("list1",  ListFieldType(Uint({Bits:8})))
+        FIELDS = [  ("field1", UINT({Bits:32})),
+                    ("field2", UINT({Bits:32})),
+                    ("list1",  ListFieldType(UINT({Bits:8})))
                     ]
     
     fields1Field = ComplexFieldType(SomeFields)
@@ -383,6 +420,7 @@ def basicUnitTest():
     fields1 = SomeFields()
     fields1.field1 = 50
     fields1.field2 = 500
+    fields1.list1 = []
     fields1.list1.append(0)
     fields1.list1.append(255)
     

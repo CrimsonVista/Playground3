@@ -21,7 +21,7 @@ class PlaygroundAddressType:
         if len(parts) != 4:
             raise InvalidPlaygroundAddress("Address string not of form a.b.c.d")
         
-        parts = map(cls.ConvertStringPart, parts)
+        parts = list(map(cls.ConvertStringPart, parts))
         
         return cls(parts[0], parts[1], parts[2], parts[3])
     
@@ -30,7 +30,7 @@ class PlaygroundAddressType:
         self._network = network
         self._device = device
         self._index = index
-        self._addressString = ".".join(map(str, self.toParts()))
+        self._addressString = ".".join(str(p) for p in self.toParts())
         
     def zone(self): return self._zone
     def network(self): return self._network
@@ -119,8 +119,8 @@ class PlaygroundAddressBlock(PlaygroundAddressType):
         addrParts  = address.toParts()
         if len(addrParts) > len(blockParts):
             return False
-        for i in range(blockParts):
-            if blockParts[i] != addrParts[i]:
+        for i in range(len(blockParts)):
+            if blockParts[i] != "*" and blockParts[i] != addrParts[i]:
                 return False
         return True
 

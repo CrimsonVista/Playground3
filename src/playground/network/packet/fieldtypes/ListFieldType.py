@@ -7,6 +7,10 @@ class ListFieldType(ComplexFieldType):
         
     def _setTypedData(self, data):
         if isinstance(data, ListFieldType):
+            if data._data == self.UNSET:
+                self._data = self.UNSET
+                return
+                
             # CREATES a shallow copy. The lists are independent, and fields that copy on .data()
             # are copied. But fields, like List itself, that do not copy on .data() are shared.
             if self != data:
@@ -19,6 +23,9 @@ class ListFieldType(ComplexFieldType):
                 self._dataList.append(dataElement)
         else:
             raise ValueError("Cannot set a ListFieldType to {}".data)
+        # The real data is stored in _dataList. But we use _data to determine
+        # if we're "null" (UNSET). So set it to some non UNSET value.
+        self._data = len(self._dataList)
             
     def data(self):
         if self._data == self.UNSET:
@@ -29,15 +36,18 @@ class ListFieldType(ComplexFieldType):
         pass # no need. Done in constructor
         
     def append(self, data):
-        self._dataList.append(PacketFieldType.CreateInstance(self.dataType()))
+        # append initializes data.
+        self._data = 0
+        
+        self._dataList.append(self.dataType()())
         self._dataList[-1].setData(data)
         
     def pop(self, index=-1):
         self._dataList.pop(index)
         
-    def clone(self):
-        clonedList = super().clone()
-        clonedList.setData(self)
+    def __call__(self, newAttributes=None):
+        clonedList = super().__call__(newAttributes)
+        clonedList.setData(self) # copy elements
         return clonedList
         
     def __contains__(self, data):

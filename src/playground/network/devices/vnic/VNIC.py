@@ -46,7 +46,8 @@ class VNIC:
         self._ports = {}
         self._connections = {}
         self._freePorts = self._freePortsGenerator()
-        self._linkTx = PlaygroundSwitchTxProtocol(self, self.address())
+        self._linkTx = None#PlaygroundSwitchTxProtocol(self, self.address())
+        self._connectedToNetwork = False
         
     def _freePortsGenerator(self):
         while True:
@@ -56,13 +57,31 @@ class VNIC:
         
     def address(self):
         return self._address
+        
+    def connectedToNetwork(self):
+        return self._connectedToNetwork
     
     def switchConnectionFactory(self):
+        if self._linkTx and self._linkTx.transport:
+            self._linkTx.transport.close()
+        self._linkTx = PlaygroundSwitchTxProtocol(self, self.address())
         return self._linkTx
         
     def controlConnectionFactory(self):
         controlProtocol = VNICSocketControlProtocol(self)
         return controlProtocol
+        
+    ###
+    # Switch Dmux routines
+    ###
+    
+    def connected(self):
+        # TODO: log connected to the switch
+        self._connectedToNetwork = True
+        
+    def disconnected(self):
+        self._connectedToNetwork = False
+        self._linkTx = None
         
     def demux(self, source, sourcePort, destination, destinationPort, data):
         remotePortKey = PortKey(source, sourcePort, destination, destinationPort)
@@ -90,7 +109,9 @@ class VNIC:
             
         else:
             pass # drop? Fail silently?
-            
+    
+    ### End Dmux Methods ###
+    
     def spawnConnection(self, portKey, protocol):
         self._connections[portKey].setProtocol(protocol)
         
@@ -100,7 +121,7 @@ class VNIC:
         self._ports[port] = control
         
         portKey = PortKey(self._address, port, destination, destinationPort)
-        self._connections[portKey] = ConnectionData(control, portKey)
+        self._connections[portKey] = ConnectionData(portKey, control)
         control.spawnConnection(portKey)
         
         return port
@@ -132,6 +153,8 @@ class VNIC:
             self.closePort(pk)
             
     def write(self, portKey, data):
+        if not self._linkTx or not self._linkTx.transport:
+            return
         self._linkTx.write(portKey.source, portKey.sourcePort, portKey.destination, portKey.destinationPort, data)
         
 def basicUnitTest():
@@ -170,7 +193,7 @@ def basicUnitTest():
     
     openPacket = VNICSocketOpenPacket(callbackAddress="192.168.0.2", callbackPort=9091)
     openPacket.connectData = openPacket.SocketConnectData(destination="2.2.2.2", destinationPort=100)
-    control.dataReceived(openPacket.__serialize__())
+    control.data_received(openPacket.__serialize__())
     
     deserializer = PacketType.Deserializer()
     deserializer.update(controlTransport.sink.getvalue())
@@ -188,7 +211,7 @@ def basicUnitTest():
     
     txPacket1 = WirePacket(source="2.2.2.2", sourcePort=100, destination="1.1.1.1", destinationPort=responsePackets[0].port,
                             data=b"This is a test message")
-    linkTx.dataReceived(txPacket1.__serialize__())
+    linkTx.data_received(txPacket1.__serialize__())
     
     assert socketTransport.sink.getvalue()==txPacket1.data
     
@@ -198,7 +221,7 @@ def basicUnitTest():
     control2 = vnic1.controlConnectionFactory()
     control2Transport = MockTransport(io.BytesIO())
     control2.connection_made(control2Transport)
-    control2.dataReceived(listenPacket.__serialize__())
+    control2.data_received(listenPacket.__serialize__())
     
     deserializer = PacketType.Deserializer()
     deserializer.update(control2Transport.sink.getvalue())
@@ -209,7 +232,7 @@ def basicUnitTest():
     
     txPacket2 = WirePacket(source="2.2.2.2", sourcePort=100, destination="1.1.1.1", destinationPort=666,
                             data=b"This is a test message x2")
-    linkTx.dataReceived(txPacket2.__serialize__())
+    linkTx.data_received(txPacket2.__serialize__())
     
     loop.advanceClock(1)
     loop.advanceClock(1)
@@ -220,7 +243,7 @@ def basicUnitTest():
     assert socket2Transport.sink.getvalue()==txPacket2.data
     
     txPacket3 = WirePacket(source="1.1.1.1", sourcePort=666, destination="2.2.2.2", destinationPort=100, data=b"response1")
-    socket2Transport.protocol.dataReceived(txPacket3.__serialize__())
+    socket2Transport.protocol.data_received(txPacket3.__serialize__())
     
     print(linkTransport.sink.getvalue())
     
