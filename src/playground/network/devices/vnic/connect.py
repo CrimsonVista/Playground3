@@ -189,15 +189,26 @@ class StandardVnicService:
     System (PNMS).
     """
     def __init__(self):
-        self.deviceManager = NetworkManager()
+        try:
+            self.deviceManager = NetworkManager()
+            self.deviceManager.loadConfiguration()
+        except:
+            # todo. Check that this is a can't find config exception
+            self.deviceManaer = None
         
     def getDefaultVnic(self):
+        if not self.deviceManager:
+            return None
         return self.deviceManager.routing().getDefaultRoute()
         
     def getVnicByDestination(self, destination, destinationPort):
+        if not self.deviceManager:
+            return None
         return self.deviceManager.routing().getRoutingDevice(destination)
         
     def getVnicByLocalAddress(self, vnicAddress):
+        if not self.deviceManager:
+            return None
         for deviceName in self.deviceManager.deviceInfo().devices():
             deviceType = self.deviceManager.deviceInfo().lookupDeviceType(deviceName)
             if deviceType == "vnic":
@@ -207,6 +218,7 @@ class StandardVnicService:
         return None
         
     def getVnicPlaygroundAddress(self, vnicName):
+        if not vnicName: return None
         device = self.deviceManager.getDevice(vnicName)
         if device: 
             address = device.address()
@@ -214,6 +226,7 @@ class StandardVnicService:
         return None
         
     def getVnicTcpLocation(self, vnicName):
+        if not vnicName: return None
         device = self.deviceManager.getDevice(vnicName)
         if device: return device.tcpLocation()
         return None

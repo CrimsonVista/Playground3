@@ -13,9 +13,15 @@ class SwitchDevice(NetworkAccessPointDevice):
     def _launch(self, timeout=30):
         if not self.dependenciesEnabled():
             return
+        if self.isRemote():
+            raise Exception("Cannot launch remote switches")
+        elif self.isManaged():
+            port = "0" # pick next free port
+        else:
+            port = self._config[self.CONFIG_OPTION_PORT]
         
         portFile, pidFile, lockFile = self._getDeviceRunFiles()
-        port = "0" # 0 picks a free port. If we weren't managed, this would be specified.
+
         
         cmdArgs = self._buildLaunchCommand(pidFile, portFile, port)
         getCmdOutput(*cmdArgs)

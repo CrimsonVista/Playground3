@@ -193,7 +193,7 @@ class NetworkManager:
     REGISTERED_DEVICE_TYPES = {}
     
     @classmethod
-    def InitializeConfigLocation(cls, pathIndex):
+    def InitializeConfigLocation(cls, pathIndex, overwrite=False):
         """
         This function can be used to initialize a playground network
         management config file (empty).
@@ -202,7 +202,11 @@ class NetworkManager:
         location = os.path.expanduser(location)
         if not os.path.exists(location):
             os.mkdir(location)
-            configFile = os.path.join(location, cls.CONFIG_FILE)
+        
+        configFile = os.path.join(location, cls.CONFIG_FILE) 
+        if os.path.exists(configFile) and overwrite:
+            os.unlink(configFile)
+        if not os.path.exists(configFile):
             with open(configFile, "w+") as f:
                 f.write("# Config File for Playground Networking\n") 
                 
@@ -220,6 +224,12 @@ class NetworkManager:
         self._devices = {}
         self._enabled = False
         self._lastModifiedTime = None
+        self._configFilePath = None
+        self._configLocation = None
+        
+    def loadConfiguration(self, configLocation=None, configFilePath=None):
+        self._configFilePath = configFilePath
+        self._configLocation = configLocation
         self._loadConfig(forced=True)
         self._loadDevices()
     
@@ -352,7 +362,20 @@ class NetworkManager:
         return None, None
         
     def _loadConfig(self, forced=False):
-        self._configLocation, self._configFilePath = self._findConfig()
+        if self._configFilePath != None:
+            # we already have it set.
+            if not os.path.exists(self._configFilePath):
+                raise Exception("Cannot find specified config file {}".format(self._configFilePath))
+            self._configLocation = os.path.dirname(self._configFilePath)
+        elif self._configLocation != None:
+            # have an  explicit location:
+            filepath = os.path.join(self._configLocation, self.CONFIG_FILE)
+            if not os.path.exists(filepath):
+                raise Exception("Cannot find {} in specified config location {}".format(self.CONFIG_FILE, self._configLocation))
+            self._configFilePath = filepath
+        else:
+            self._configLocation, self._configFilePath = self._findConfig()
+            
         if not self._configFilePath:
             raise Exception("{} not found in any of {}".format(self.CONFIG_FILE, ",".join(self.SEARCH_PATHS)))
             

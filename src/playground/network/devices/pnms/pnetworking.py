@@ -43,17 +43,23 @@ initialize global will initialize a directory under /var.
     command = command.lower().strip()
     
     if command == "initialize":
-        pathType = args and args.pop(0) or "local"
-        if pathType == "local":
-            pathIndex = 0
-        elif pathType == "global":
-            pathIndex = 1
-        else:
-            failExit("Initialize takes 1 optional argument: local or global. Got {} instead.".format(pathType))
-        NetworkManager.InitializeConfigLocation(pathIndex)
+        pathIndex = 0
+        overwrite = False
+        while args:
+            nextArg = args.pop(0)
+            if nextArg == "local":
+                pathIndex = 0
+            elif nextArg == "global":
+                pathIndex = 1
+            elif nextArg == "overwrite":
+                overwrite = True
+            else:
+                failExit("Initialize got unknown option {}.".format(pathType))
+        NetworkManager.InitializeConfigLocation(pathIndex, overwrite=overwrite)
         return 0
         
     manager = NetworkManager()
+    manager.loadConfiguration()
     
     if command == "add":
         if not args: failExit("USAGE: add device_name device_type device_args")
