@@ -80,7 +80,7 @@ def runVnic(vnic_address, port, statusfile, switch_address, switch_port):
     # up and "operating" even if it can't connect to the switch. So
     # start the server first.
     
-    coro = loop.create_server(vnic.controlConnectionFactory, port=port)
+    coro = loop.create_server(vnic.controlConnectionFactory, host="127.0.01", port=port)
     server = loop.run_until_complete(coro)
     servingPort = server.sockets[0].getsockname()[1]
     

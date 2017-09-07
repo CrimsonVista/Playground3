@@ -6,9 +6,9 @@ class SwitchDevice(NetworkAccessPointDevice):
     LAUNCH_SCRIPT = "launch_switch"
     
 
-    def _buildLaunchCommand(self, pidFile, statusFile, port):
+    def _buildLaunchCommand(self, pidFile, statusFile, port, *extras):
         cmdArgs = [self.LAUNCH_SCRIPT, "--pidfile", pidFile, "--statusfile", statusFile, "--port", port]
-        return cmdArgs
+        return cmdArgs + list(extras)
             
     def _launch(self, timeout=30):
         if not self.dependenciesEnabled():
@@ -24,6 +24,10 @@ class SwitchDevice(NetworkAccessPointDevice):
 
         
         cmdArgs = self._buildLaunchCommand(pidFile, portFile, port)
+        
+        if self.isLocal():
+            cmdArgs.append("--private")
+        
         getCmdOutput(*cmdArgs)
         
         running = self._waitUntilRunning(timeout=timeout)

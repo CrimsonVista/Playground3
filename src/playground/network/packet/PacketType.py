@@ -4,7 +4,7 @@ from playground.common import Version as PacketDefinitionVersion
 from playground.common.io import HighPerformanceStreamIO
 from playground.network.packet.encoders import DefaultPacketEncoder
 from playground.network.packet.fieldtypes import NamedPacketType, ComplexFieldType, PacketFields, Uint, \
-                                                    StringFieldType, PacketFieldType
+                                                    ListFieldType, StringFieldType, PacketFieldType
 from playground.network.packet.fieldtypes.attributes import MaxValue, Bits                                                  
 from .PacketDefinitionRegistration import g_DefaultPacketDefinitions
 
@@ -171,11 +171,14 @@ def basicUnitTest():
         
         class SubFields(PacketFields):
             FIELDS = [("subfield1",Uint({Bits:16})), ("subfield2",Uint({Bits:16}))]
+        SubFieldsType = ComplexFieldType(SubFields)
         
         FIELDS = [  ("header", ComplexFieldType(SubFields)), 
                     ("field1", Uint({MaxValue:1000})), 
                     ("field2", StringFieldType),
-                    ("trailer",ComplexFieldType(SubFields))]
+                    ("listField", ListFieldType(Uint)),
+                    ("complexListField", ListFieldType(SubFieldsType)),
+                    ("trailer", SubFieldsType)]
     
     packet = TestPacket1()
     packet.header = TestPacket1.SubFields()
@@ -185,6 +188,10 @@ def basicUnitTest():
     packet.header.subfield2 = 100
     packet.field1 = 50
     packet.field2 = "test packet field 2"
+    packet.listField = [1,2,3]
+    packet.complexListField = [TestPacket1.SubFields()]
+    packet.complexListField[0].subfield1 = 0
+    packet.complexListField[0].subfield2 = 1
     packet.trailer.subfield1 = 5
     packet.trailer.subfield2 = 500
     
@@ -193,6 +200,7 @@ def basicUnitTest():
     
     assert packet.header.subfield1 == restoredPacket.header.subfield1 
     assert packet.field2 == restoredPacket.field2
+    assert packet == restoredPacket
 
 if __name__=="__main__":
     basicUnitTest()

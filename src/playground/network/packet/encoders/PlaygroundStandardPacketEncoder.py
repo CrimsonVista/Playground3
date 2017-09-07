@@ -287,6 +287,9 @@ class PacketFieldsEncoder:
                 raise PacketEncodingError("Error encoding field {}.".format(fieldName)) from encodingException
     
     def decodeIterator(self, stream, complexType, topDecoder):
+        # the complex type should have an unset inner data type. 
+        # initialize this so it can be deserialized.
+        complexType.initializeData()
         packetFields = complexType.data()
         fieldToTag = self._processFields(packetFields.FIELDS)
         fieldCount = yield from stream.unpackIterator(self.FIELD_COUNT_PACK_CODE)
@@ -295,9 +298,6 @@ class PacketFieldsEncoder:
             fieldID = yield from stream.unpackIterator(self.FIELD_TAG_PACK_CODE)
             fieldName = fieldToTag.inverse()[fieldID]
             rawField  = packetFields.__getrawfield__(fieldName)
-            if isinstance(rawField, ComplexFieldType):
-                # complex types must be initialized prior to decoding
-                rawField.initializeData()
             try:
                 yield from topDecoder.decodeIterator(stream, rawField)
             except Exception as encodingException:
@@ -314,6 +314,7 @@ class ListEncoder:
             
     def decodeIterator(self, stream, listType, topDecoder):
         listSize = yield from stream.unpackIterator(self.LIST_SIZE_PACK_CODE)
+        listType.setData([]) # in case the size is 0
         for i in range(listSize):
             listType.append(PacketFieldType.UNSET) # Create a "null" entry in the list
             rawListData = listType.__getrawitem__(-1)

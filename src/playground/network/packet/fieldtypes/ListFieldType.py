@@ -55,6 +55,20 @@ class ListFieldType(ComplexFieldType):
             if field.data() == data: return True
         return False
         
+    def __eq__(self, otherList):
+        """
+        Normally, the PacketFieldType's __eq__ is sufficient.
+        But because we don't actually store data in _data, we
+        need to do a different kind of comparison.
+        """
+        if isinstance(otherList, ListFieldType) or isinstance(otherList, list):
+            if len(self) == len(otherList):
+                for i in range(len(self)):
+                    if self[i] != otherList[i]:
+                        return False
+                return True
+        return False
+        
     def __len__(self):
         return len(self._dataList)
         

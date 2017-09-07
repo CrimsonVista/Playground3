@@ -23,6 +23,11 @@ class VnicDevice(InterfaceDevice):
             raise Exception("Cannot enable VNIC until {} is enabled.".format(connectedToDevice.name()))
         connAddress, connPort = connectedToDevice.tcpLocation()
         
+        # A connAddress of None means the "public" interface. Should still
+        # be able to connect via localhost
+        if connAddress == None:
+            connAddress = "127.0.0.1"
+        
         vnicAddress = self._config["playground_address"]
         
         portFile, pidFile, lockFile = self._getDeviceRunFiles()

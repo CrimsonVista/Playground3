@@ -139,6 +139,16 @@ class PNMSDevice(metaclass=PNMSDeviceLoader):
     def _runEnableStatusStateMachine(self):
         newStatus = self._enableStatus
         
+        # TODO: I wrote this function in a 'haze' thinkin the manager keeps running.
+        # but, of course, it shuts down after run. There's going to be
+        # no callback. Well, I'm leaving this code in. Because, it may
+        # be that in the future I have a call-back system that works.
+        # but for now, let's try to activate everything.
+        if self._enableStatus == self.STATUS_WAITING_FOR_DEPENDENCIES:
+            for device in self._deviceDependencies:
+                if not device.enabled():
+                    device.enable()
+        
         if self._enableStatus in [self.STATUS_DISABLED, self.STATUS_ABNORMAL_SHUTDOWN]:
             if self._running():
                 # We might have gotten here because of a restart
@@ -186,16 +196,6 @@ class PNMSDevice(metaclass=PNMSDeviceLoader):
         self._enableStatus = newStatus
         self._enableToggle = False
         self._pnms.postAlert(self.enable, self._enableStatus)
-        
-        # TODO: I wrote this in a 'haze' thinkin the manager keeps running.
-        # but, of course, it shuts down after run. There's going to be
-        # no callback. Well, I'm leaving this code in. Because, it may
-        # be that in the future I have a call-back system that works.
-        # but for now, let's try to activate everything.
-        if self._enableStatus == self.STATUS_WAITING_FOR_DEPENDENCIES:
-            for device in self._deviceDependencies:
-                if not device.enabled():
-                    device.enable()
         
     def _shutdown(self, timeout=5):
         pid = self.getPid()

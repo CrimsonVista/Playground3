@@ -5,8 +5,15 @@ class NetworkAccessPointDevice(PNMSDevice):
     CONFIG_OPTION_ADDRESS = "tcp_address"
     CONFIG_OPTION_PORT    = "tcp_port"
     
+    """
+    A managed server is local (127.0.0.1) with a random port.
+    Local is a server on 127.0.0.1; it will only accept connections from the same computer.
+    Public is a server on the public interface and can be used across the underlying network.
+    Remote is a place holder for a remote server.
+    """
     CONFIG_TYPE_MANAGED = "managed"
     CONFIG_TYPE_LOCAL   = "local"
+    CONFIG_TYPE_PUBLIC  = "public"
     CONFIG_TYPE_REMOTE  = "remote"
     
     CONFIG_TYPE_DEFAULT = CONFIG_TYPE_MANAGED
@@ -21,6 +28,12 @@ class NetworkAccessPointDevice(PNMSDevice):
         
     def isRemote(self):
         return self._config[self.CONFIG_OPTION_TYPE] == self.CONFIG_TYPE_REMOTE
+        
+    def isPublic(self):
+        return self._config[self.CONFIG_OPTION_TYPE] == self.CONFIG_TYPE_PUBLIC
+        
+    def isLocal(self):
+        return self._config[self.CONFIG_OPTION_TYPE] == self.CONFIG_TYPE_LOCAL
         
     def enabled(self):
         # Remote Net-AP's are not under control of this
@@ -49,6 +62,8 @@ class NetworkAccessPointDevice(PNMSDevice):
             
         elif self.isRemote():
             return self._config[self.CONFIG_OPTION_ADDRESS], int(self._config[self.CONFIG_OPTION_PORT])
+        elif self.isPublic():
+            return None, int(self._config[self.CONFIG_OPTION_PORT])
         else:
             return "127.0.0.1", int(self._config[self.CONFIG_OPTION_PORT])
         
@@ -68,14 +83,15 @@ class NetworkAccessPointDevice(PNMSDevice):
             
             # Handle Config Type Options
             # managed
-            # remote addr port
+            # public port
             # local port
-            elif nextArg in [self.CONFIG_TYPE_MANAGED, self.CONFIG_TYPE_REMOTE, self.CONFIG_TYPE_LOCAL]:
+            # remote addr port
+            elif nextArg in [self.CONFIG_TYPE_MANAGED, self.CONFIG_TYPE_REMOTE, self.CONFIG_TYPE_LOCAL, self.CONFIG_TYPE_PUBLIC]:
                 connType = nextArg
 
                 if nextArg == self.CONFIG_TYPE_REMOTE:
                     connAddress = args.pop(0)
-                if nextArg in [self.CONFIG_TYPE_REMOTE, self.CONFIG_TYPE_LOCAL]:
+                if nextArg in [self.CONFIG_TYPE_REMOTE, self.CONFIG_TYPE_LOCAL, self.CONFIG_TYPE_PUBLIC]:
                     connPort = args.pop(0)
 
             else:
