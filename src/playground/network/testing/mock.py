@@ -7,7 +7,7 @@ class MockTransportToProtocol(Transport):
         self.writeCount = 0
     def write(self, data):
         self.writeCount+=1
-        self.sink.dataReceived(data)
+        self.sink.data_received(data)
         
 class MockTransportToStorageStream(Transport):
     def __init__(self, sinkStream, extra=None):
