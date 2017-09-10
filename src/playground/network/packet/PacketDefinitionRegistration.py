@@ -39,6 +39,9 @@ class PacketDefinitionRegistration(object):
         definitionData.majorMax = max(version.major, definitionData.majorMax)
         definitionData.minorMax[version.major] = max(definitionData.minorMax.get(version.major, 0), version.minor)
         self.__definitions[identifier] = definitionData
+        
+    def __iter__(self):
+        return self.__definitions.__iter__()
 
 g_DefaultPacketDefinitions = PacketDefinitionRegistration()
         

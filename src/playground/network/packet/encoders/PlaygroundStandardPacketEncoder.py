@@ -39,6 +39,12 @@ class EncoderStreamAdapter(object):
         self._stream.seek(curPos)
         return endPos-curPos
         
+    def seek(self, *args):
+        return self._stream.seek(*args)
+        
+    def tell(self, *args):
+        return self._stream.tell(*args)
+        
     def read(self, count):
         return self._stream.read(count)
         
@@ -326,20 +332,36 @@ PlaygroundStandardPacketEncoder.RegisterTypeEncoder(ListFieldType(PacketFieldTyp
     
         
 class PacketEncoder:
-    PacketIdentifierTemplate = "!B{}sB{}s" # Length followed by length-string
-                                           # For packet type identifier and version
+    PacketIdentifierTemplate = "!QB{}sB{}s" # packet length, definition, version
+                                            # Definition and version are length-prefixed strings
                                            
     def encode(self, stream, complexType, topEncoder):
+        packetStartPosition = stream.tell()
+        
         packet = complexType.data()
         packetDefEncoded = packet.DEFINITION_IDENTIFIER.encode(UNICODE_ENCODING)
         packetVerEncoded = packet.DEFINITION_VERSION.encode(   UNICODE_ENCODING)
         packCode = self.PacketIdentifierTemplate.format(len(packetDefEncoded), len(packetVerEncoded))
-        stream.pack(packCode, len(packetDefEncoded), packetDefEncoded, 
+        
+        # start by putting in a 0 for the packet length
+        stream.pack(packCode, 0, len(packetDefEncoded), packetDefEncoded, 
                               len(packetVerEncoded), packetVerEncoded) 
                               
         PacketFieldsEncoder().encode(stream, complexType, topEncoder)
         
+        packetEndPosition = stream.tell()
+        packetLength = packetEndPosition - packetStartPosition
+        
+        stream.seek(packetStartPosition)
+        # now write in the real value
+        stream.pack("!Q", packetLength)
+        stream.seek(packetEndPosition)
+        
     def decodeIterator(self, stream, complexType, topEncoder):
+        packetStartPosition = stream.tell()
+        
+        packetLength = yield from stream.unpackIterator("!Q")
+        
         nameLen = yield from stream.unpackIterator("!B")
         name    = yield from stream.unpackIterator("!{}s".format(nameLen))
         name    = name.decode(UNICODE_ENCODING)
@@ -353,9 +375,29 @@ class PacketEncoder:
         basePacketType    = complexType.dataType()
         packetDefinitions = basePacketType.DEFINITIONS_STORE
         packetType = packetDefinitions.getDefinition(name, version)
-        packet = packetType()
-        complexType.setData(packet)
-        yield from PacketFieldsEncoder().decodeIterator(stream, complexType, topEncoder)
+        if not packetType:
+            # uh oh. We don't have the definition of this packet. 
+            # The encoder assumes an underlying "reliable" stream
+            # so this should mean a misnamed packet, or a packet for
+            # which we do not have a definition. So, we're going to skip
+            # ahead until we can find something.
+            pass # Do nothing. Let unreadBytes cleanup. TODO: logging/error
+        else:
+            packet = packetType()
+            complexType.setData(packet)
+            yield from PacketFieldsEncoder().decodeIterator(stream, complexType, topEncoder)
+        bytesUsed = stream.tell() - packetStartPosition
+        unreadBytes = packetLength - bytesUsed
+        
+        if unreadBytes:
+            # uh oh. We have a mismatch between bytes read expected and actual.
+            # read the remaining bytes.
+            stream.read(unreadBytes)
+            
+            # raise an exception so that other parts of the system can identify
+            # that we lost a packet. We've advanced the stream, so the system
+            # should be able to pick up where it left off.
+            raise Exception("Packet deserialization error. Packet Type={}, Expected Size={}, Actual Size={}".format(packetType, packetLength, bytesUsed))
 PlaygroundStandardPacketEncoder.RegisterTypeEncoder(ComplexFieldType(NamedPacketType), PacketEncoder)
         
 def basicUnitTest():

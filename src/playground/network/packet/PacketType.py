@@ -8,6 +8,9 @@ from playground.network.packet.fieldtypes import NamedPacketType, ComplexFieldTy
 from playground.network.packet.fieldtypes.attributes import MaxValue, Bits                                                  
 from .PacketDefinitionRegistration import g_DefaultPacketDefinitions
 
+import logging
+logger = logging.getLogger(__name__)
+
 FIELD_NOT_SET = PacketFieldType.UNSET
 
 class PacketDefinitionLoader(type):
@@ -137,12 +140,17 @@ class PacketType(NamedPacketType, metaclass=PacketDefinitionLoader):
                         exhausted = True
                     except StopIteration as result:
                         # we got a message!
+                        logger.debug("Deserialized message {}. {} bytes remaining".format(result.value, self._stream.tell()))
                         yield result.value
                         # get new iterator
                         self._iterator = cls.DeserializeStream(self._stream)
                     except Exception as error:
+                        self._iterator = cls.DeserializeStream(self._stream)
+                        logger.debug("Deserialization error {}.".format(error))
                         if self._errHandler: self._errhandler.handleException(error)
-                        # if no error handler, simply drop errors.
+                        # if no error handler, simply drop errors. Recreate
+                        # the stream to get it out of error state
+                        # (otherwise returns None!)
         return ConcreteDeserializer(stream, errHandler)
 
     DEFINITION_IDENTIFIER = "__abstract__.PacketType"
@@ -164,6 +172,12 @@ class PacketType(NamedPacketType, metaclass=PacketDefinitionLoader):
         return "%s v%s (%x)" % (self.DEFINITION_IDENTIFIER, self.DEFINITION_VERSION, id(self))
         
 def basicUnitTest():
+    # Uncomment the next two lines if testing is needed.
+    # in particular, if it is necessary to see malformed
+    # packets being dropped
+    # from playground.common import logging as p_logging
+    # p_logging.EnablePresetLogging(p_logging.PRESET_TEST, rootLogging=True)
+    
     p = PacketType()
     class TestPacket1(PacketType):
         DEFINITION_IDENTIFIER = "packettype.basicunittest.TestPacket1"
@@ -201,6 +215,22 @@ def basicUnitTest():
     assert packet.header.subfield1 == restoredPacket.header.subfield1 
     assert packet.field2 == restoredPacket.field2
     assert packet == restoredPacket
+    
+    # test damaged packet ignored in nextPackets
+    packets = [packet.__serialize__(), None, packet.__serialize__()]
+    # create a damaged packet where the definition identifier is changed.
+    goodbytes = packet.__serialize__()
+    idIndex = goodbytes.find(bytes(TestPacket1.DEFINITION_IDENTIFIER, "utf8"))
+    badByteIndex = idIndex + len(TestPacket1.DEFINITION_IDENTIFIER)-1
+    badBytes = goodbytes[:badByteIndex] + b'x' + goodbytes[badByteIndex+1:]
+    packets[1] = badBytes
+    deserializer = PacketType.Deserializer()
+    deserializer.update(packets[0])
+    deserializer.update(packets[1])
+    deserializer.update(packets[2])
+    restoredPackets = list(deserializer.nextPackets())
+    assert len(restoredPackets) == 2
 
 if __name__=="__main__":
     basicUnitTest()
+    print("Basic Unit Test passed!")
