@@ -11,7 +11,7 @@ class MockTransportToProtocol(Transport):
         self.sink.data_received(data)
     def close(self, *args):
         self.closed = True
-        self.sink and self.sink.connection_lost()
+        self.sink and self.sink.connection_lost(None)
         
 class MockTransportToStorageStream(Transport):
     def __init__(self, sinkStream, extra=None):
