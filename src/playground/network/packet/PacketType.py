@@ -139,11 +139,12 @@ class PacketType(NamedPacketType, metaclass=PacketDefinitionLoader):
                         # No more messages until more data. We're done.
                         exhausted = True
                     except StopIteration as result:
+                        # get new iterator. NOTE, call this first! Just in case!
+                        self._iterator = cls.DeserializeStream(self._stream)
+                        
                         # we got a message!
                         logger.debug("Deserialized message {}. {} bytes remaining".format(result.value, self._stream.tell()))
                         yield result.value
-                        # get new iterator
-                        self._iterator = cls.DeserializeStream(self._stream)
                     except Exception as error:
                         self._iterator = cls.DeserializeStream(self._stream)
                         logger.debug("Deserialization error {}.".format(error))

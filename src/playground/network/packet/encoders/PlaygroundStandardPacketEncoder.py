@@ -398,6 +398,9 @@ class PacketEncoder:
             # that we lost a packet. We've advanced the stream, so the system
             # should be able to pick up where it left off.
             raise Exception("Packet deserialization error. Packet Type={}, Expected Size={}, Actual Size={}".format(packetType, packetLength, bytesUsed))
+        if not packetType:
+            # We didn't have unused bytes, but we didn't have a packetType. Still an error
+            raise Exception("Packet deserialization error. Packet Type={}".format(packetType))
 PlaygroundStandardPacketEncoder.RegisterTypeEncoder(ComplexFieldType(NamedPacketType), PacketEncoder)
         
 def basicUnitTest():
