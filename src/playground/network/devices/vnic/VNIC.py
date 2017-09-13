@@ -5,10 +5,14 @@
 from playground.common import CustomConstant as Constant
 from playground.network.protocols.vsockets import VNICSocketControlProtocol
 from playground.network.protocols.switching import PlaygroundSwitchTxProtocol
+from playground.network.protocols.packets.switching_packets import WirePacket
 from playground.network.common import PortKey
+from playground.network.common import PlaygroundAddress, PlaygroundAddressBlock
 
 from asyncio import Protocol
-import io
+import io, logging
+
+logger = logging.getLogger(__name__)
         
 class ConnectionData: 
         
@@ -38,27 +42,59 @@ class VNIC:
     _MAX_PORT          = (2**16)-1
 
     def __init__(self, playgroundAddress):
-        self._address = playgroundAddress
+        self._address = PlaygroundAddress.FromString(playgroundAddress)
+        logger.info("{} just started up".format(self))
         
         # ports and connections are interrelated but slightly different
         # a port is just an integer key mapped to a control object.
         # a connection is tied to the port.
         self._ports = {}
         self._connections = {}
+        self._dumps = set([])
         self._freePorts = self._freePortsGenerator()
         self._linkTx = None#PlaygroundSwitchTxProtocol(self, self.address())
         self._connectedToNetwork = False
+        self._promiscuousMode = None
         
     def _freePortsGenerator(self):
         while True:
             for i in range(self._STARTING_SRC_PORT, self._MAX_PORT):
                 if i in self._ports: continue
                 yield i
+                
+    def promiscuousLevel(self):
+        if self._promiscuousMode == None: return 0
+        return self._promiscuousMode
+        
+    def setPromiscuousLevel(self, level):
+        """
+        Setting level to 0 or None turns promiscuous mode off.
+        Otherwise, start listening for more addresses than just your own.
+        
+        Level 0: Address Only (off)
+        Level 1: x.y.z.*
+        Level 2: x.y.*.*
+        Level 3: x.*.*.*
+        Level 4: *.*.*.*
+        """
+        if level == None or level < 0: level = 0
+        if level > 4: level = 4
+        if level != self._promiscuousMode:
+            self._promiscuousMode = level
+            self._updateRegisteredAddress()
+            
+    def _updateRegisteredAddress(self):
+        if not self.connected(): return
+        level = self._promiscuousMode
+        listeningBlock = PlaygroundAddressBlock(*self._address.toParts())
+        for i in range(level):
+            listeningBlock.getParentBlock()
+        self._linkTx.changeRegisteredAddress(str(listeningBlock))
         
     def address(self):
         return self._address
         
-    def connectedToNetwork(self):
+    def connected(self):
         return self._connectedToNetwork
     
     def switchConnectionFactory(self):
@@ -68,6 +104,7 @@ class VNIC:
         return self._linkTx
         
     def controlConnectionFactory(self):
+        logger.debug("{} creating control protocol for new connection.".format(self))
         controlProtocol = VNICSocketControlProtocol(self)
         return controlProtocol
         
@@ -75,15 +112,25 @@ class VNIC:
     # Switch Dmux routines
     ###
     
-    def connected(self):
-        # TODO: log connected to the switch
+    def connectionMade(self):
+        logger.info("{} connected to network".format(self))
         self._connectedToNetwork = True
+        if self.promiscuousLevel():
+            self._updateRegisteredAddress()
         
-    def disconnected(self):
+    def connectionLost(self):
+        logging.info("{} lost connection network".format(self))
         self._connectedToNetwork = False
         self._linkTx = None
         
     def demux(self, source, sourcePort, destination, destinationPort, data):
+        logger.debug("{} received {} bytes of data from {}:{} for {}:{}".format(self, len(data), source, sourcePort, destination, destinationPort))
+        for dumper in self._dumps:
+            dumpPacket = WirePacket(source=source, sourcePort=sourcePort,
+                                    destination=destination, destinationPort=destinationPort,
+                                    data=data)
+            dumper.transport.write(dumpPacket.__serialize__())
+                
         remotePortKey = PortKey(source, sourcePort, destination, destinationPort)
         
         # this portkey is backwards. The source is from the remote machine
@@ -120,7 +167,7 @@ class VNIC:
         
         self._ports[port] = control
         
-        portKey = PortKey(self._address, port, destination, destinationPort)
+        portKey = PortKey(str(self._address), port, destination, destinationPort)
         self._connections[portKey] = ConnectionData(portKey, control)
         control.spawnConnection(portKey)
         
@@ -157,10 +204,23 @@ class VNIC:
             return
         self._linkTx.write(portKey.source, portKey.sourcePort, portKey.destination, portKey.destinationPort, data)
         
+    def startDump(self, protocol):
+        self._dumps.add(protocol)
+        
+    def stopDump(self, protocol):
+        if protocol in self._dumps:
+            self._dumps.remove(protocol)
+            
+    def __repr__(self):
+        return "VNIC ({})".format(self._address)
+        
 def basicUnitTest():
     from playground.network.testing import MockTransportToStorageStream as MockTransport
     from playground.asyncio_lib.testing import TestLoopEx
-    from playground.network.protocols.packets.vsocket_packets import VNICSocketOpenPacket, VNICSocketOpenResponsePacket, PacketType
+    from playground.network.protocols.packets.vsocket_packets import    VNICSocketOpenPacket,           \
+                                                                        VNICSocketOpenResponsePacket,   \
+                                                                        VNICStartDumpPacket,            \
+                                                                        PacketType
     from playground.network.protocols.packets.switching_packets import WirePacket
     import io, asyncio
     
@@ -245,7 +305,35 @@ def basicUnitTest():
     txPacket3 = WirePacket(source="1.1.1.1", sourcePort=666, destination="2.2.2.2", destinationPort=100, data=b"response1")
     socket2Transport.protocol.data_received(txPacket3.__serialize__())
     
-    print(linkTransport.sink.getvalue())
+    vnic1.setPromiscuousLevel(2)
+    # TODO: Asert new announce packet set
+    dumper = vnic1.controlConnectionFactory()
+    dumperTransport = MockTransport(io.BytesIO())
+    dumper.connection_made(dumperTransport)
+    dumper.data_received(VNICStartDumpPacket().__serialize__())
+    txPacket4 = WirePacket(source="2.2.2.2", sourcePort=666, destination="2.2.1.5", destinationPort=300, data=b"No Address")
+    linkTx.data_received(txPacket4.__serialize__())
+    
+    deserializer.update(dumperTransport.sink.getvalue())
+    
+    dumpPackets = list(deserializer.nextPackets())
+    assert len(dumpPackets) == 1
+    assert dumpPackets[0].data == txPacket4.data
+    
+    # set "myProtocol" so that closing the transport closes
+    # the protocol (connection_lost). Check that no further
+    # messages are sent to the protocol
+    dumperTransport.setMyProtocol(dumper)
+    dumperTransport.close()
+    dumperTransport.sink.truncate(0)
+    
+    txPacket5 = WirePacket(source="2.2.2.2", sourcePort=666, destination="2.2.1.5", destinationPort=300, data=b"No Address")
+    linkTx.data_received(txPacket5.__serialize__())
+    
+    deserializer.update(dumperTransport.sink.getvalue())
+    
+    dumpPackets = list(deserializer.nextPackets())
+    assert len(dumpPackets) == 0
     
 if __name__=="__main__":
     basicUnitTest()

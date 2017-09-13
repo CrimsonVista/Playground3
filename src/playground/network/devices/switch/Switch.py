@@ -7,6 +7,7 @@ Original File Created on Aug 20, 2013
 '''
 
 from playground.network.protocols.switching import PlaygroundSwitchRxProtocol
+from playground.network.common import PlaygroundAddressBlock
         
 class Switch:        
     def __init__(self):
@@ -24,6 +25,9 @@ class Switch:
             del self._linkToAddress[protocol]
         
     def registerLink(self, address, protocol):
+        if not PlaygroundAddressBlock.IsValidAddressString(address):
+            # drop bad addresses silently.
+            return
         self.unregisterLink(protocol)
             
         if not address in self._addressToLinks:
@@ -34,7 +38,14 @@ class Switch:
         self._linkToAddress[protocol] = address
 
     def getOutboundLinks(self, source, sourcePort, destination, destinationPort):
-        return self._addressToLinks.get(destination, set([]))
+        outboundLinks = set([])
+        if not PlaygroundAddressBlock.IsValidAddressString(destination):
+            return outboundLinks
+        pAddress = PlaygroundAddressBlock.FromString(destination)
+        while pAddress:
+            outboundLinks.update(self._addressToLinks.get(str(pAddress), set([])))
+            pAddress = pAddress.getParentBlock()
+        return outboundLinks
         
     def handleExtensionPacket(self, protocol, packet):
         """
@@ -49,11 +60,18 @@ class Switch:
 def basicUnitTest():
     s = Switch()
     p1 = s.ProtocolFactory()
+    p2 = s.ProtocolFactory()
+    p3 = s.ProtocolFactory()
     s.registerLink("1.1.1.1", p1)
+    s.registerLink("2.2.2.2", p2)
+    s.registerLink("2.2.*.*", p3)
     assert len(s.getOutboundLinks(None, None, "1.1.1.1", None)) == 1
     assert p1 in s.getOutboundLinks(None, None, "1.1.1.1", None)
     s.unregisterLink(p1)
     assert len(s.getOutboundLinks(None, None, "1.1.1.1", None))== 0
+    
+    assert len(s.getOutboundLinks(None, None, "2.2.2.2", None)) == 2
+    assert len(s.getOutboundLinks(None, None, "2.2.3.4", None)) == 1
     
 if __name__=="__main__":
     basicUnitTest()

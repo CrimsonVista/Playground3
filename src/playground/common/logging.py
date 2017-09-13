@@ -97,11 +97,32 @@ class PlaygroundLoggingConfiguration(logging.Handler):
     # LOGFILE is defined in the singleton constructor
     
     def __init__(self):
-        super(logging.Handler, self).__init__()
-        self.loggingNode = sys.argv and str(sys.argv[0]) or "unknown playground_app"
-        self.handlers = {}        
+        super().__init__()
+        
+        # python hack to try and deal with lack of script info
+        # from a -m launch before it has all the data.
+        if sys.argv[0] in ["-c", "-m"]:
+            self.__loggingNode = None            
+        else:
+            self.__loggingNode = os.path.basename(sys.argv[0])
+        self.handlers = {}   
+        self.additionalModules = []
         # rootLogLevel is set every time enableLogging is called.
         # Logger logs everyting. We filter at the hander/filter level
+        
+    def getLoggingNode(self):
+        if not self.__loggingNode:
+            import __main__
+            print(__main__.__package__)
+            if __main__.__package__:
+                self.__loggingNode = __main__.__package__.replace(".","_")
+        if self.__loggingNode:
+            return self.__loggingNode
+        else:
+            return None
+    
+    def setLoggingNode(self, name):
+        self.__loggingNode = name
         
     def toggleMaxLogging(self):
         raise Exception("Not yet implemented") 
@@ -111,70 +132,81 @@ class PlaygroundLoggingConfiguration(logging.Handler):
             if record.levelno == logging.NOTSET or handler.level <= record.levelno:
                 handler.handle(record)
             
-    def enableLogging(self, logLevel=logging.NOTSET, rootLogging=False, additionalModules=None):
+    def enableLogging(self, level=logging.NOTSET, additionalModules=None):
         "by default, turn all logging on and leave to handlers to filter"
         
-        if rootLogging:
-            rootLogger = ""
-        else:
-            rootLogger = self.PLAYGROUND_ROOT_LOGGER
-            "Python is weird about 'NOTSET'. It enables everything at root, but"
-            "for all other loggers, just propagates. So we'll just set it to '1' which"
-            "is, I belive, the highest logging other than NOTSET"
-            if logLevel == logging.NOTSET:
-                logLevel = 1
-        
-        logging.getLogger(rootLogger).setLevel(logLevel)
-        if self not in logging.getLogger(rootLogger).handlers:
-            logging.getLogger(rootLogger).addHandler(self)
+        # Ensure that root logging is at least at this level.
+        # If non-playground code has logging, it is up to their
+        # own handlers to disregard logging that they are not
+        # interested in.
+        if logging.getLogger().getEffectiveLevel() > level:
+            logging.getLogger().setLevel(level)
+        if self not in logging.getLogger().handlers:
+            logging.getLogger().addHandler(self)
         if additionalModules:
-            for module in additionalModules:
-                logging.getLogger(module).setLevel(logLevel)
-                logging.getLogger(module).addHandler(self)
+            self.additionalModules = additionalModules
             
-        # this handler logs everyting, and then passes off to sub-handlers
-        self.setLevel(logging.NOTSET)
+        # By default, this handler logs everyting, and then passes off to sub-handlers
+        # Setting this global level reduces the logging of all handlers
+        self.setLevel(level)
     
     def enableHandler(self, handler, level=logging.DEBUG, specificModules=None, specificTags=None):
         #TODO: User should be able to configure formatter somehow, but it
         # needs to be a playground formatter.
         handler.setLevel(level)
         handler.setFormatter(PlaygroundLoggingFormatter())
+                
+        # set up the modules to log.
+        # By default, this includes playground. However, if specificModules are set, those
+        # will replace "playground" (e.g., "playground.network")
+        if specificModules == None: 
+            filterModules = ["playground"] + self.additionalModules
+        else:
+            filterModules = specificModules + self.additionalModules
         if handler not in self.handlers:
-            pfilter = PlaygroundLoggingFilter(specificModules, specificTags)
+            pfilter = PlaygroundLoggingFilter(filterModules, specificTags)
             handler.addFilter(pfilter)
             self.handlers[handler] = pfilter
         else:
             pfilter = self.handlers[handler]
-            pfilter.configure(specificModules, specificTags)
+            pfilter.configure(filterModules, specificTags)
     
     def disableHandler(self, handler):
         if handler in self.handlers:
             handler.removeFilter(self.handlers[handler])
             del self.handlers[handler]
             
+    def clearAllHandlers(self):
+        self.handlers = {}
+            
     def createRotatingLogFileHandler(self, name=None, path=None):
         if not path:
-            localLogDirectory = os.expanduser("~/.playground/logs")
-            if not os.path.exists(localLogDirectory):
+            path = os.path.expanduser("~/.playground/logs")
+            if not os.path.exists(path):
                 try:
-                    os.path.makedirs(localLogDirectory)
-                except:
-                    localLogDirectory = os.getcwd()
+                    os.makedirs(path)
+                except Exception as error:
+                    print(error)
+                    path = os.getcwd()
         if not name:
-            name = os.path.basename(self.loggingNode) +".log"
-        return logging.handlers.TimedRotatingFileHandler(os.path.join(path, name))
+            loggingNode = self.getLoggingNode()
+            if not loggingNode: loggingNode = "playground_general"
+            name = loggingNode + ".log"
+        fqname = os.path.join(path, name)
+        return logging.handlers.TimedRotatingFileHandler(fqname)
         
         
 Config = PlaygroundLoggingConfiguration() 
 
-PRESET_MINIMAL = "MINIMAL"
-PRESET_QUIET = "QUIET"
-PRESET_VERBOSE = "VERBOSE"
-PRESET_DEBUG = "DEBUG"
-PRESET_TEST  = "TEST"
-PRESET_MAX = "MAX"
-PRESET_LEVELS = [PRESET_MINIMAL,
+PRESET_NONE    = "NONE"       # OFf
+PRESET_MINIMAL = "MINIMAL"    # Error Only
+PRESET_QUIET = "QUIET"        # Info Only
+PRESET_VERBOSE = "VERBOSE"    # All messages + asyncio
+PRESET_DEBUG = "DEBUG"        # All messages to file and stderr
+PRESET_TEST  = "TEST"         # All messages to stderr
+PRESET_MAX = "MAX"            # Maybe get rid of this?
+PRESET_LEVELS = [PRESET_NONE,
+                 PRESET_MINIMAL,
                  PRESET_QUIET,
                  PRESET_VERBOSE,
                  PRESET_DEBUG,
@@ -182,31 +214,32 @@ PRESET_LEVELS = [PRESET_MINIMAL,
                  PRESET_MAX,
                  ]
 
-def EnablePresetLogging(level, rootLogging=False):
-    if level == PRESET_MINIMAL:
+def EnablePresetLogging(level):
+    Config.clearAllHandlers()
+    if level == PRESET_NONE:
+        # turn off logging
+        Config.enableLogging(level=logging.CRITICAL)
+    elif level == PRESET_MINIMAL:
         # log error messages to logfile
-        Config.enableLogging(rootLogging=rootLogging)
-        Config.enableHandler(Config.createRotatingLogFileHandler(),logLevel=logging.ERROR)
+        Config.enableLogging()
+        Config.enableHandler(Config.createRotatingLogFileHandler(),level=logging.ERROR)
     elif level == PRESET_QUIET:
-        # logs most messages, but only to logfile
-        Config.enableLogging(rootLogging=rootLogging)
-        Config.enableHandler(Config.createRotatingLogFileHandler(), logLevel=logging.NOTSET)
+        # logs info-level messages, but only to logfile
+        Config.enableLogging()
+        Config.enableHandler(Config.createRotatingLogFileHandler(), level=logging.INFO)
     elif level == PRESET_VERBOSE:
         # logs all messages including those from asyncio, errors to stderr
-        Config.enableLogging(additionalModules=["asyncio"],
-                             rootLogging=rootLogging)
-        Config.enableHandler(Config.STDERR_HANDLER, level=logging.ERROR)
+        Config.enableLogging(additionalModules=["asyncio"])
+        Config.enableHandler(Config.STDERR_HANDLER, level=logging.NOTSET)
         Config.enableHandler(Config.createRotatingLogFileHandler())
         # also prints to stderr
     elif level == PRESET_DEBUG:
-        Config.enableLogging(additionalModules=["asyncio"],
-                             rootLogging=rootLogging)
-        Config.enableHandler(Config.STDERR_HANDLER, logLevel=logging.NOTSET)
-        Config.enableHandler(Config.createRotatingLogFileHandler(), logLevel=logging.NOTSET)
+        Config.enableLogging(additionalModules=["asyncio"])
+        Config.enableHandler(Config.STDERR_HANDLER, evel=logging.NOTSET)
+        Config.enableHandler(Config.createRotatingLogFileHandler(), level=logging.NOTSET)
         # Test is like debug, but doesn't log to a file.
     elif level == PRESET_TEST:
-        Config.enableLogging(additionalModules=["asyncio"],
-                             rootLogging=rootLogging)
+        Config.enableLogging(additionalModules=["asyncio"])
         Config.enableHandler(Config.STDERR_HANDLER, level=logging.NOTSET)
     elif level == PRESET_MAX:
         raise Exception("Not yet implemented. Maybe will remove.")

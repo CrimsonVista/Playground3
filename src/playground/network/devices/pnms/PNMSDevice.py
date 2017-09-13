@@ -122,6 +122,9 @@ class PNMSDevice(metaclass=PNMSDeviceLoader):
     def config(self, verb, args):
         pass
         
+    def query(self, verb, args):
+        return None
+        
     def _getDeviceRunFiles(self):
         statusFile = os.path.join(self._pnms.location(), "device_{}.status".format(self.name()))
         pidFile = os.path.join(self._pnms.location(), "device_{}.pid".format(self.name()))

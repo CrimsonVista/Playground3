@@ -22,6 +22,7 @@ class PlaygroundSwitchRxProtocol(Protocol):
         self.transport = None
         
     def connection_lost(self, reason=None):
+        self.transport = None
         self._switch.unregisterLink(self)
         
     def connection_made(self, transport):
@@ -90,9 +91,13 @@ class PlaygroundSwitchTxProtocol(Protocol):
         
     def connection_made(self, transport):
         self.transport = transport
+        self.changeRegisteredAddress(self._address)
+        self._demuxer.connectionMade()
+        
+    def changeRegisteredAddress(self, newAddress):
+        self._address = newAddress
         announceLinkPacket = AnnounceLinkPacket(address=self._address)
         self.transport.write(announceLinkPacket.__serialize__())
-        self._demuxer.connected()
         
     def write(self, source, sourcePort, destination, destinationPort, data):
         wirePacket = WirePacket(source          = source,
@@ -141,7 +146,8 @@ class PlaygroundSwitchTxProtocol(Protocol):
                                     demuxData)
                                     
     def connection_lost(self, reason=None):
-        self._demuxer.disconnected()
+        self.transport = None
+        self._demuxer.connectionLost()
                                     
 
 def basicUnitTest():
@@ -164,16 +170,15 @@ def basicUnitTest():
             return self.addresses[destination]
         def handleExtensionPacket(self, ep):
             self.extensionPackets.append(ep)
-        def connected(self):
-            pass
-        def disconnected(self):
-            pass
     class MockClient:
         def __init__(self):
             self.results = []
         def demux(self, source, sourcePort, destination, destinationPort, data):
             self.results.append((source, sourcePort, destination, destinationPort, data))
-    
+        def connectionMade(self):
+            pass
+        def connectionLost(self):
+            pass
             
     switch = MockSwitch()
     rx1 = PlaygroundSwitchRxProtocol(switch)
@@ -186,14 +191,9 @@ def basicUnitTest():
     c3Tx = PlaygroundSwitchTxProtocol(client3, "2.2.2.2")
     
     # Client transports send data to rx)
-    c1Transport = MockTransport(rx1) 
-    c2Transport = MockTransport(rx2)
-    c3Transport = MockTransport(rx3)
-    
-    # Switch transports send back to clients
-    rx1Transport = MockTransport(c1Tx)
-    rx2Transport = MockTransport(c2Tx)
-    rx3Transport = MockTransport(c3Tx)
+    c1Transport, rx1Transport = MockTransport.CreateTransportPair(c1Tx, rx1)
+    c2Transport, rx2Transport = MockTransport.CreateTransportPair(c2Tx, rx2)
+    c3Transport, rx3Transport = MockTransport.CreateTransportPair(c3Tx, rx3)
     
     # Make the switch-side connections first
     rx1.connection_made(rx1Transport)
@@ -236,6 +236,17 @@ def basicUnitTest():
     
     print("client 1 results count {}, len data {}, original len{}.".format(len(client1.results), len(client1.results[1][-1]), len(largeData)))
     assert client1.results[1][-1] == largeData
+    
+    c1Transport.close()
+    assert c1Tx.transport == None
+    assert rx1Transport.closed
+    assert rx1.transport == None
+    
+    rx2Transport.close()
+    assert rx2.transport == None
+    assert c2Transport.closed
+    assert c2Tx.transport == None
+    
     
 if __name__=="__main__":
     basicUnitTest()

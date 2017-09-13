@@ -4,8 +4,15 @@ from playground.network.packet.fieldtypes import UINT8, UINT16, UINT32, UINT64, 
                                                  ComplexFieldType, PacketFields
 from playground.network.packet.fieldtypes.attributes import Optional                                                 
 
+class VNICSocketControlPacket(PacketType):
+    """
+    This packet type is only to provide a common base class
+    for VNIC packets.
+    """
+    DEFINITION_IDENTIFIER = "vsockets.VNICSocketControlPacket"
+    DEFINITION_VERSION    = "1.0"
 
-class VNICSocketOpenPacket(PacketType):
+class VNICSocketOpenPacket(VNICSocketControlPacket):
     DEFINITION_IDENTIFIER = "vsockets.VNICSocketOpenPacket"
     DEFINITION_VERSION    = "1.0"
     
@@ -34,7 +41,7 @@ class VNICSocketOpenPacket(PacketType):
     def isListenType(self):
         return self.connectData == FIELD_NOT_SET and self.listenData != FIELD_NOT_SET
 
-class VNICSocketOpenResponsePacket(PacketType):
+class VNICSocketOpenResponsePacket(VNICSocketControlPacket):
     DEFINITION_IDENTIFIER = "vsockets.VNICSocketOpenResponsePacket"
     DEFINITION_VERSION    = "1.0"
     FIELDS = [
@@ -46,7 +53,7 @@ class VNICSocketOpenResponsePacket(PacketType):
     def isFailure(self):
         return (self.errorCode != FIELD_NOT_SET or self.errorMessage != FIELD_NOT_SET)
     
-class VNICConnectionSpawnedPacket(PacketType):
+class VNICConnectionSpawnedPacket(VNICSocketControlPacket):
     DEFINITION_IDENTIFIER = "vsockets.VNICConnectionSpawnedPacket"
     DEFINITION_VERSION    = "1.0"
     FIELDS = [
@@ -57,7 +64,29 @@ class VNICConnectionSpawnedPacket(PacketType):
         ("destinationPort", UINT16)
     ]
     
-        
+class VNICStartDumpPacket(VNICSocketControlPacket):
+    DEFINITION_IDENTIFIER = "vsockets.VNICStartDumpPacket"
+    DEFINITION_VERSION    = "1.0"
+    
+class VNICPromiscuousLevelPacket(VNICSocketControlPacket):
+    """
+    This packet is both a getter/setter packet that can be
+    sent by a client to either set or get the promiscuity 
+    level. It is also sent back by the server as an acknowledgement
+    with the current level
+    
+    Client sends VNICPromiscuousLevelPacket with no fields set
+    Server responds with VNICPromiscuousLevelPacket with get set to current level
+    
+    Client sends VNICPromiscuousLevelPacket with set field set
+    Server responds with VNICPromiscuousLevelPacket with get set to new level
+    """
+    DEFINITION_IDENTIFIER = "vsockets.VNICPromiscuousLevelPacket"
+    DEFINITION_VERSION    = "1.0"
+    
+    FIELDS = [  ("set",UINT8({Optional:True})),
+                ("get",UINT8({Optional:True}))]
+    
 def basicUnitTest():
     v1 = VNICSocketOpenPacket(callbackAddress="1.1.1.1", callbackPort=80)
     connectData = v1.SocketConnectData(destination="2.2.2.2",destinationPort=1000)

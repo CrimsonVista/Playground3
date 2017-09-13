@@ -1,7 +1,8 @@
-
+from . import PacketFieldType
 
 class PacketFields:
     FIELDS = []
+    UNSET = PacketFieldType.UNSET
     
     def __init__(self, **fieldInitialization):
         self._fields = {}

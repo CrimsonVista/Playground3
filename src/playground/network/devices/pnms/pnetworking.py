@@ -24,6 +24,7 @@ commands:
     pnetworking enable device
     pnetworking disable device
     pnetworking config device verb *args
+    pnetworking query device verb *args
     
     pnetworking status [device]
     
@@ -91,6 +92,16 @@ initialize global will initialize a directory under /var.
         deviceManager = manager.getDevice(deviceName)
         if not deviceManager: failExit("Unknown device {}".format(deviceName))
         deviceManager.config(verb, args)
+    elif command == "query":
+        if not args: failExit("USAGE: config device_name verb args")
+        deviceName = args.pop(0)
+        if not args: failExit("USAGE: config device_name verb args")
+        verb = args.pop(0)
+        deviceManager = manager.getDevice(deviceName)
+        if not deviceManager: failExit("Unknown device {}".format(deviceName))
+        result = deviceManager.query(verb, args)
+        if result != None:
+            print("\tResponse: {}".format(result))
     elif command == "on":
         manager.on()
     elif command == "off":

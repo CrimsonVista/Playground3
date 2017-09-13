@@ -1,13 +1,20 @@
 
 from playground.network.protocols.packets.vsocket_packets import VNICSocketOpenPacket,              \
                                                                     VNICSocketOpenResponsePacket,   \
-                                                                    VNICConnectionSpawnedPacket, PacketType
+                                                                    VNICConnectionSpawnedPacket,    \
+                                                                    VNICStartDumpPacket,            \
+                                                                    VNICSocketControlPacket,        \
+                                                                    VNICPromiscuousLevelPacket,     \
+                                                                    PacketType
+from playground.network.protocols.packets.switching_packets import WirePacket
 from playground.network.common import StackingProtocol, StackingTransport
+from playground.network.common import PortKey
 from playground.common import CustomConstant as Constant
 
 
 from asyncio import Protocol
-import asyncio
+import asyncio, logging
+logger = logging.getLogger(__name__)
 
 class SocketControl:
     SOCKET_TYPE_CONNECT = Constant(strValue="Outbound Connection Socket")
@@ -120,13 +127,15 @@ class VNICSocketControlProtocol(Protocol):
     MODE_LISTENING  = Constant(strValue="Outbound Socket Listening")
     MODE_CLOSING    = Constant(strValue="Socket Closing")
     
+    MODE_DUMP       = Constant(strValue="Special Mode Dump")
+    
     ERROR_UNKNOWN = Constant(strValue="An Unknown Error", intValue=255)
     ERROR_BUSY    = Constant(strValue="Port is not available", intValue=1)
     
     def __init__(self, vnic):
         self._vnic = vnic
         self._state = self.MODE_OPENING 
-        self._deserializer = VNICSocketOpenPacket.Deserializer()
+        self._deserializer = PacketType.Deserializer()
         self._control = None
         self.transport = None
         
@@ -140,19 +149,45 @@ class VNICSocketControlProtocol(Protocol):
         self.transport = transport
         
     def connection_lost(self, reason=None):
-        self._control and self._control.close()
+        if self._mode == self.MODE_DUMP:
+            self._vnic.stopDump(self)
+        elif self._control:
+            self._control.close()
+        self.transport = None
         
     def data_received(self, data):
         self._deserializer.update(data)
         for controlPacket in self._deserializer.nextPackets():
             if isinstance(controlPacket, VNICSocketOpenPacket):
+                logger.info("{} received socket open operation.".format(self._vnic))
                 self.socketOpenReceived(controlPacket)
+            elif isinstance(controlPacket, VNICStartDumpPacket):
+                logger.info("{} received start dump operation.".format(self._vnic))
+                self._mode = self.MODE_DUMP
+                self._vnic.startDump(self)
+            elif isinstance(controlPacket, WirePacket) and self._mode == self.MODE_DUMP:
+                logger.debug("{} received raw wire for dump mode connection.".format(self._vnic))
+                outboundKey = PortKey(controlPacket.source, controlPacket.sourcePort, 
+                                        controlPacket.destination, controlPacket.destinationPort)
+                self._vnic.write(outboundKey, controlPacket.data)
+            elif isinstance(controlPacket, VNICPromiscuousLevelPacket):
+                logger.info("{} received promiscuous control packet.".format(self._vnic))
+                try:
+                    logger.info("{} setting prom. mode to {}".format(self._vnic, controlPacket.set))
+                    if controlPacket.set != controlPacket.UNSET:
+                        self._vnic.setPromiscuousLevel(controlPacket.set)
+                    controlPacket.set = controlPacket.UNSET
+                    controlPacket.get = self._vnic.promiscuousLevel()
+                    logger.info("{} returning level {}".format(self, controlPacket.get))
+                    self.transport.write(controlPacket.__serialize__())
+                except Exception as error:
+                    logger.error("{} got error {}".format(self._vnic, error))
             #elif isinstance(controlPacket, VNICSocketStatusPacket):
             #    self.socketStatusReceived(controlPacket)
             #elif isinstance(controlPacket, VNICSocketClosePacket):
             #    self.socketCloseReceived(controlPacket)
-            #else:
-            #    self.unknownPacketReceived(controlPacket)
+            else:
+                logger.info("{} received unknown packet {}".format(self._vnic, controlPacket))
                
     def socketOpenReceived(self, openSocketPacket):
         resp = VNICSocketOpenResponsePacket()
@@ -215,7 +250,7 @@ class VNICConnectProtocol(Protocol):
         self._destination = destination
         self._destinationPort = destinationPort
         self._callbackService = callbackService
-        self._deserializer = PacketType.Deserializer()
+        self._deserializer = VNICSocketControlPacket.Deserializer()
         self._outboundPort = None
     
     def connection_made(self, transport):
@@ -250,7 +285,7 @@ class VNICListenProtocol(Protocol):
         self._callbackService = callbackService
         self._applicationProtocolFactory = applicationProtocolFactory
         self._listenPort   = listenPort
-        self._deserializer = PacketType.Deserializer()    
+        self._deserializer = VNICSocketControlPacket.Deserializer()    
     
     def connection_made(self, transport):
         self.transport = transport
@@ -310,3 +345,40 @@ class VNICCallbackProtocol(StackingProtocol):
     def data_received(self, buf):
         if self.higherProtocol():
             self.higherProtocol().data_received(buf)
+            
+class VNICDumpProtocol(Protocol):
+    def __init__(self):
+        self.transport = None
+        
+    def connection_made(self, transport):
+        self.transport = transport
+        self.transport.write(VNICStartDumpPacket().__serialize__())
+        
+    def data_received(self, data):
+        pass
+        # subclasses can overwrite
+        
+    def write(self, source, sourceAddress, destination, destinationPort, data):
+        pkt = WirePacket(source=source, sourceAddress=sourceAddress,
+                            destination=destination, destinationPort=destinationPort,
+                            data=data)
+        self.transport.write(pkt.__serialize__())
+        
+class VNICPromiscuousControl(Protocol):
+    def __init__(self, level=None):
+        self.level = level
+        self.currentVnicLevel = None
+        self.deserializer = VNICPromiscuousLevelPacket.Deserializer()
+    def connection_made(self, transport):
+        self.transport=transport
+        request = VNICPromiscuousLevelPacket()
+        if self.level != None: request.set = self.level
+        transport.write(request.__serialize__())
+    def data_received(self, data):
+        self.deserializer.update(data)
+        for response in self.deserializer.nextPackets():
+            if response.get != response.UNSET:
+                self.currentVnicLevel = response.get
+            self.transport.close()
+            self.transport=None
+            break

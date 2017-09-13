@@ -8,22 +8,46 @@ Original File Date: Nov 25, 2013
 import random
 
 class PlaygroundAddressType:
+        
     @classmethod
     def ConvertStringPart(cls, part):
         return part
+        
+    @classmethod
+    def IsValidAddressString(cls, addressString, out_addressParts=None):
+        """
+        Checks if a string is a valid address. Can vary slightly from subclass
+        to subclass because it relies on ConvertStringPart to check that each
+        part can be successfully converted.
+        
+        But all addresses must be of the form a.b.c.d.
+        
+        The optional out_addressParts must be a list or support an append method.
+        It takes converted parts created during the check. If the check returns
+        false, this variable will still contain all the parts that were successfully
+        converted.
+        """
+        if type(addressString) != str:
+            return False
+        parts = addressString.split(".")
+        if len(parts) != 4:
+            return False
+        try:
+            parts = [cls.ConvertStringPart(x) for x in parts]
+            if out_addressParts != None:
+                for part in parts:
+                    out_addressParts.append(part)
+            return True
+        except:
+            return False
     
     @classmethod
     def FromString(cls, addressString):
-        if type(addressString) != str:
-            raise InvalidPlaygroundAddress("Address string not of type string")
+        addressParts = []
+        if not cls.IsValidAddressString(addressString, out_addressParts=addressParts):
+            raise InvalidPlaygroundAddress("Bad address {}. Must be of form a.b.c.d".format(addressString))
         
-        parts = addressString.split(".")
-        if len(parts) != 4:
-            raise InvalidPlaygroundAddress("Address string not of form a.b.c.d")
-        
-        parts = list(map(cls.ConvertStringPart, parts))
-        
-        return cls(parts[0], parts[1], parts[2], parts[3])
+        return cls(*addressParts)
     
     def __init__(self, zone, network, device, index):
         self._zone = zone
@@ -90,12 +114,24 @@ class PlaygroundAddress(PlaygroundAddressType):
     
 class PlaygroundAddressBlock(PlaygroundAddressType):
     @classmethod
+    def RootBlock(cls):
+        return cls.FromString("*.*.*.*")
+        
+    @classmethod
     def ConvertStringPart(cls, part):
         return part == "*" and part or int(part)
     
     def __init__(self, zone="*", network="*", device="*", index="*"):
         super().__init__(zone, network, device, index)
         self.validate(raiseException=True)
+        specifiedParts = []
+        for part in self.toParts():
+            if part == "*": break
+            specifiedParts.append(str(part))
+        self._prefixString = ".".join(specifiedParts)
+        
+    def prefixString(self):
+        return self._prefixString
         
     def validate(self, raiseException=False):
         for part in self.toParts():
@@ -123,6 +159,19 @@ class PlaygroundAddressBlock(PlaygroundAddressType):
             if blockParts[i] != "*" and blockParts[i] != addrParts[i]:
                 return False
         return True
+        
+    def getParentBlock(self):
+        blockParts = self.toParts()
+        if "*" in blockParts:
+            currentBlock = blockParts.index("*")
+        else:
+            currentBlock = len(blockParts)
+        nextBlock = currentBlock - 1
+        if nextBlock < 0:
+            # We are already *.*.*.*. There is no parent block
+            return None
+        blockParts[nextBlock] = "*"
+        return PlaygroundAddressBlock(*blockParts)       
 
 class InvalidPlaygroundAddress(Exception): pass
 
