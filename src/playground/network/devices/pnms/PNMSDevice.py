@@ -70,10 +70,14 @@ class PNMSDevice(metaclass=PNMSDeviceLoader):
             for file in runFiles:
                 if os.path.exists(file):
                     os.unlink(file)
+                    
+    def _reloadRuntimeData(self):
+        pass
         
     def installToNetwork(self, pnms, mySection):
         self._pnms = pnms
         self._config = mySection
+        self._reloadRuntimeData()
         # call self.enabled to correctly set enableStatus
         # cannot call in constructor, requires self._pnms
         self._runEnableStatusStateMachine()
@@ -155,7 +159,7 @@ class PNMSDevice(metaclass=PNMSDeviceLoader):
         # no callback. Well, I'm leaving this code in. Because, it may
         # be that in the future I have a call-back system that works.
         # but for now, let's try to activate everything.
-        if self._enableStatus == self.STATUS_WAITING_FOR_DEPENDENCIES:
+        if not self._enableStatus and self._enableToggle:
             for device in self._deviceDependencies:
                 if not device.enabled():
                     device.enable()

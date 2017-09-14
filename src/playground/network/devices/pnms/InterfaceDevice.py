@@ -16,7 +16,11 @@ class InterfaceDevice(PNMSDevice):
     
     CONFIG_ROUTE_DEFAULT = "default"
     
-    
+    def _reloadRuntimeData(self):
+        connectedTo = self.connectedTo()
+        connectedTo = self._pnms.getDevice(connectedTo)
+        if connectedTo != None and connectedTo not in self._deviceDependencies:
+            self._deviceDependencies.add(connectedTo)
 
     def initialize(self, args):
         auto = self.CONFIG_TRUE
