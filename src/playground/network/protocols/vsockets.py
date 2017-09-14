@@ -122,6 +122,7 @@ class ReverseOutboundSocketProtocol(Protocol):
 
 class VNICSocketControlProtocol(Protocol):
 
+    MODE_NONE       = Constant(strValue="Startup Mode")
     MODE_OPENING    = Constant(strValue="Socket Opening")
     MODE_CONNECTED  = Constant(strValue="Outbound Socket Connected")
     MODE_LISTENING  = Constant(strValue="Outbound Socket Listening")
@@ -137,6 +138,7 @@ class VNICSocketControlProtocol(Protocol):
         self._state = self.MODE_OPENING 
         self._deserializer = PacketType.Deserializer()
         self._control = None
+        self._mode = self.MODE_NONE
         self.transport = None
         
     def device(self):

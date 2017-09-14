@@ -124,10 +124,14 @@ class EchoControl:
         self.txProtocol = txProtocol
         print("Echo Connection to Server Established!")
         self.txProtocol = txProtocol
-        print("Enter Message: ", end="")
+        sys.stdout.write("Enter Message: ")
+        sys.stdout.flush()
+        asyncio.get_event_loop().add_reader(sys.stdin, self.stdinAlert)
         
     def callback(self, message):
         print("Server Response: {}".format(message))
+        sys.stdout.write("\nEnter Message: ")
+        sys.stdout.flush()
         
     def stdinAlert(self):
         data = sys.stdin.readline()
@@ -174,7 +178,6 @@ if __name__=="__main__":
         coro = playground.getConnector().create_playground_connection(control.buildProtocol, remoteAddress, 101)
         transport, protocol = loop.run_until_complete(coro)
         print("Echo Client Connected. Starting UI t:{}. p:{}".format(transport, protocol))
-        loop.add_reader(sys.stdin, control.stdinAlert)
         control.connect(protocol)
         loop.run_forever()
         loop.close()

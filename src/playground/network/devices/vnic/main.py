@@ -1,5 +1,5 @@
 from playground.network.devices import VNIC
-from playground.common.logging import EnablePresetLogging, PRESET_QUIET
+from playground.common.logging import EnablePresetLogging, PRESET_QUIET, PRESET_VERBOSE
 import asyncio, sys, os
 import argparse
 
@@ -78,6 +78,7 @@ def runVnic(vnic_address, port, statusfile, switch_address, switch_port):
     # Because the Dameon process does a fork, you need to enable logging (which creates a file)
     # after the fork! So, enable logging within runVnic, rather than outside of it.
     # EnablePresetLogging(PRESET_QUIET)
+    # EnablePresetLogging(PRESET_VERBOSE)
     logger.info("""
  ====================================
  | Launch VNIC (Address: {}, Pid: {})
@@ -95,7 +96,7 @@ def runVnic(vnic_address, port, statusfile, switch_address, switch_port):
     # up and "operating" even if it can't connect to the switch. So
     # start the server first.
     
-    coro = loop.create_server(vnic.controlConnectionFactory, host="127.0.01", port=port)
+    coro = loop.create_server(vnic.controlConnectionFactory, host="127.0.0.1", port=port)
     server = loop.run_until_complete(coro)
     servingPort = server.sockets[0].getsockname()[1]
     
