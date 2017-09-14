@@ -53,7 +53,7 @@ class PNMSDevice(metaclass=PNMSDeviceLoader):
     
     REGISTER_DEVICE_TYPE_NAME = None # All abstract classes should leave this none. All concrete classes must specify.
     
-    def __init__(self, deviceName, ):
+    def __init__(self, deviceName):
         self._pnms = None
         self._config = None
         self._name = deviceName
@@ -63,6 +63,13 @@ class PNMSDevice(metaclass=PNMSDeviceLoader):
         self._enableStatus = self.STATUS_DISABLED
         # the toggle is if there has been a request to go from one state to the other
         self._enableToggle = False
+        
+    def _cleanupFiles(self):
+        if not self._enableStatus:
+            runFiles = self._getDeviceRunFiles()
+            for file in runFiles:
+                if os.path.exists(file):
+                    os.unlink(file)
         
     def installToNetwork(self, pnms, mySection):
         self._pnms = pnms
@@ -110,6 +117,7 @@ class PNMSDevice(metaclass=PNMSDeviceLoader):
             self._runEnableStatusStateMachine()
         
     def enabled(self):
+        self._cleanupFiles()
         return self._enableStatus
         
     def getPid(self):

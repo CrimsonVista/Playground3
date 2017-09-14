@@ -321,6 +321,7 @@ class VNICCallbackProtocol(StackingProtocol):
         self.transport = None
         self._callbackService = callbackService
         self._spawnPort = None
+        self._backlog = []
         
     def connection_made(self, transport):
         super().connection_made(transport)
@@ -336,6 +337,8 @@ class VNICCallbackProtocol(StackingProtocol):
             p = p.higherProtocol()
         p.setHigherProtocol(application)
         self.higherProtocol().connection_made(nextTransport)
+        while self._backlog:
+            self.higherProtocol().data_received(self._backlog.pop(0))
 
     def connection_lost(self, reason=None):
         super().connection_lost(reason)
@@ -347,6 +350,8 @@ class VNICCallbackProtocol(StackingProtocol):
     def data_received(self, buf):
         if self.higherProtocol():
             self.higherProtocol().data_received(buf)
+        else:
+            self._backlog.append(buf)
             
 class VNICDumpProtocol(Protocol):
     def __init__(self):
