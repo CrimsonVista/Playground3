@@ -41,6 +41,7 @@ class InterfaceDevice(PNMSDevice):
         
     def destroy(self):
         self._disconnect()
+        routesView, routesApi = self._pnms.getSectionAPI(NetworkManager.ROUTES_SECTION_NAME)
         for route in self.routes():
             routesApi.removeRoute(route)
         
