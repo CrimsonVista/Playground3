@@ -109,8 +109,8 @@ setup(
     # pip to create the appropriate form of executable for the target platform.
     entry_points={
         'console_scripts': [
-            'launch_switch=playground.network.devices.switch.main:main',
-            'launch_vnic=playground.network.devices.vnic.main:main',
+            'launch_switch=entry_points.launch_switch:main',
+            'launch_vnic=entry_points.launch_vnic:main',
             'pnetworking=playground.network.devices.pnms.pnetworking:main'
         ],
     },
