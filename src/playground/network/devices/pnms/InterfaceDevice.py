@@ -18,6 +18,8 @@ class InterfaceDevice(PNMSDevice):
     
     def _reloadRuntimeData(self):
         connectedTo = self.connectedTo()
+        if connectedTo == None: return
+
         connectedTo = self._pnms.getDevice(connectedTo)
         if connectedTo != None and connectedTo not in self._deviceDependencies:
             self._deviceDependencies.add(connectedTo)
