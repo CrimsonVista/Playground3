@@ -1,11 +1,15 @@
-from playground.network.devices import Switch
-import asyncio, sys, os, socket
+
+import sys, os, socket
 import argparse
 
 import daemon
 from daemon import pidlockfile as pidfile
 
 def runSwitch(host, port, statusfile):
+    # Don't import anything playground or asyncio related until after the fork.
+    from playground.network.devices import Switch
+    import asyncio
+    
     switch = Switch()
     loop = asyncio.get_event_loop()
     coro = loop.create_server(switch.ProtocolFactory, host=host, port=port, family=socket.AF_INET)

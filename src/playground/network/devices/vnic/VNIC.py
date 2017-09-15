@@ -200,6 +200,7 @@ class VNIC:
             self.closePort(pk)
             
     def write(self, portKey, data):
+        logger.debug("VNIC sending message for port key {}".format(portKey))
         if not self._linkTx or not self._linkTx.transport:
             return
         self._linkTx.write(portKey.source, portKey.sourcePort, portKey.destination, portKey.destinationPort, data)

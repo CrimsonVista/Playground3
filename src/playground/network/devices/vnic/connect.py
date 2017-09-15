@@ -1,8 +1,59 @@
 from playground.network.common import PlaygroundAddress, StackingProtocol
+from playground.network.common.Protocol import ProtocolObservation
 from playground.network.protocols.vsockets import VNICConnectProtocol, VNICListenProtocol, VNICCallbackProtocol
 from playground.network.devices.pnms import NetworkManager
+from playground.asyncio_lib import SimpleCondition
 import playground
 import asyncio
+
+class ConnectionMadeObserver:
+    """
+    Observer protocols for connection made events. Provide
+    an async waiter for a protocol to be connected.
+    
+    TODO: clean up ones that shut down badly.
+    Not that big of a deal because this is per process. If
+    it shuts down bad, whole process probably goes bad
+    """
+    def __init__(self):
+        self.protocols = {}
+        
+    def watch(self, protocol):
+        """
+        For a given protocol, setup a condition to
+        wait for connection made
+        """
+        ProtocolObservation.Listen(protocol, self)
+        self.protocols[protocol] = SimpleCondition()
+        
+    def connected(self, protocol):
+        return self.protocols[protocol] == "connected"
+        
+    def release(self, protocol):
+        if not protocol in self.protocols: return
+        ProtocolObservation.StopListening(protocol, self)
+        del self.protocols[protocol]
+        
+    def __call__(self, protocol, event, *args):
+        if protocol in self.protocols and event == ProtocolObservation.EVENT_CONNECTION_MADE:
+            if self.protocols[protocol] == "connected":
+                # we're already done.
+                return
+            condition = self.protocols[protocol]
+            self.protocols[protocol] = "connected"
+            condition.notify()
+    async def awaitConnection(self, protocol):
+        # if we don't have the protocol, or it's already done, don't wait.
+        if self.protocols.get(protocol, None) != "connected":
+            condition = self.protocols[protocol]
+        
+            # wait for the connection to be made
+            await condition.waitForPredicate(lambda: self.protocols[protocol] == True)
+        
+        # at this point, we're connected. clean up and return
+        self.release(protocol)
+        return
+connectionMadeObserver = ConnectionMadeObserver()
 
 class CallbackService:
     def __init__(self, callbackAddress, callbackPort, protocolStack):
@@ -13,6 +64,9 @@ class CallbackService:
         self._controlProtocols = {}
         self._connectionBackptr = {}
         self._protocolStack = protocolStack
+        
+        # asyncio condition
+        self._conditionConnections = SimpleCondition()
         
     def location(self):
         return (self._callbackAddress, self._callbackPort)
@@ -44,6 +98,9 @@ class CallbackService:
             
     def buildStack(self, spawnTcpPort):
         controlProtocol, applicationProtocol, source, sourcePort, destination, destinationPort = self._completionData[spawnTcpPort]
+        
+        connectionMadeObserver.watch(applicationProtocol)
+        
         self._dataProtocols[spawnTcpPort].setPlaygroundConnectionInfo(applicationProtocol, source, sourcePort, destination, destinationPort)
         
         self._controlProtocols[controlProtocol] = self._controlProtocols.get(controlProtocol, []) + [self._dataProtocols[spawnTcpPort]]
@@ -51,12 +108,16 @@ class CallbackService:
         del self._dataProtocols[spawnTcpPort]
         del self._completionData[spawnTcpPort]
 
-    async def waitForConnections(self, controlProtocol, n=1, timeout=30):
+        # notify that a new connection is received
+        self._conditionConnections.notify()
+
+    async def waitForConnections(self, controlProtocol, n=1):
         if not controlProtocol in self._controlProtocols:
             self._controlProtocols[controlProtocol] = []
-        while len(self._controlProtocols[controlProtocol]) < n and timeout >= 0:
-            await asyncio.sleep(.1)
-            timeout = timeout-.1
+        
+        # now wait for the list to be big enough
+        predicate = lambda: len(self._controlProtocols[controlProtocol]) >= n
+        result = await self._conditionConnections.awaitCondition(predicate)
         return self._controlProtocols[controlProtocol]
         
     def getConnections(self, controlProtocol):
@@ -104,11 +165,16 @@ class PlaygroundServer:
         return super().__getattribute__(attr)
         
 class PlaygroundConnector:
-    def __init__(self, vnicService, protocolStack=None, callbackAddress="127.0.0.1", callbackPort=0):
+    def __init__(self, vnicService=None, protocolStack=None, callbackAddress="127.0.0.1", callbackPort=0):
         self._stack = protocolStack
         self._vnicService = vnicService
         self._callbackService = CallbackService(callbackAddress, callbackPort, protocolStack)
         self._ready = False
+        
+        if not vnicService:
+            self._vnicService = StandardVnicService()
+            
+        self._protocolReadyCondition = SimpleCondition()
         
     async def create_callback_service(self):
         callbackAddress, callbackPort = self._callbackService.location()
@@ -136,22 +202,17 @@ class PlaygroundConnector:
         coro = asyncio.get_event_loop().create_connection(lambda: connectProtocol, vnicAddr, vnicPort)
         transport, protocol  = await coro
         # now we have to wait for protocol to make it's callback.
-        coro = self._callbackService.waitForConnections(protocol, timeout=timeout)
-        connections = await coro
+        coro = self._callbackService.waitForConnections(protocol)
+        connections = await asyncio.wait_for(coro, timeout)
         if len(connections) != 1:
             raise Exception("VNIC Open Failed (Unexpected Error, connections={})!".format(len(connections)))
+            
         playgroundProtocol = connections[0]
         while isinstance(playgroundProtocol, StackingProtocol) and playgroundProtocol.higherProtocol():
             playgroundProtocol = playgroundProtocol.higherProtocol()
         
-        # this is the application protocol!
-        # unlike twisted, asyncio does not require transport to be set at all.
-        # consequently, there's no easy way to know if its connected
-        while not playgroundProtocol.transport:
-            await asyncio.sleep(.1)
-            timeout = timeout-.1
-        if not playgroundProtocol.transport:
-            raise Exception("Timeout before application connection made")
+        connectionMadeCoro = connectionMadeObserver.awaitConnection(playgroundProtocol)
+        await asyncio.wait_for(connectionMadeCoro, timeout)
             
         return playgroundProtocol.transport, playgroundProtocol
         
@@ -175,7 +236,6 @@ class PlaygroundConnector:
         
         vnicAddr, vnicPort = location
         listenProtocol = VNICListenProtocol(sourcePort, self._callbackService, protocolFactory)
-        print("Connecting to {}:{}".format(vnicAddr, vnicPort))
         coro = asyncio.get_event_loop().create_connection(lambda: listenProtocol, vnicAddr, vnicPort)
         transport, protocol  = await coro
         
@@ -231,10 +291,8 @@ class StandardVnicService:
         if device: return device.tcpLocation()
         return None
 
-g_PlaygroundNetworkConnectors = {"default":PlaygroundConnector(StandardVnicService())}        
+g_PlaygroundNetworkConnectors = {"default":PlaygroundConnector()}
 def getConnector(connectorName="default"):
     return g_PlaygroundNetworkConnectors[connectorName]
 def setConnector(connectorName, connector):
     g_PlaygroundNetworkConnectors[connectorName] = connector
-playground.getConnector = getConnector
-playground.setConnector = setConnector

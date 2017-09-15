@@ -37,7 +37,8 @@ class StackingProtocolFactory:
     def __call__(self):
         topProtocol = None
         for i in range(len(self._stackFactories)):
-            protocol = self._stackFactories[-i](topProtocol)
+            protocol = self._stackFactories[-i]()
+            protocol.setHigherProtocol(topProtocol)
             topProtocol = protocol
         return protocol
        
@@ -82,36 +83,52 @@ class StackingTransport(Transport):
         for i in iterable:
             self.write(i)
 
-
-"""        
-class ProtocolEvents(object):
-    PROTOCOL_LISTENERS = {}
-    EVENT_CONNECTION_MADE = 0
-    EVENT_CONNECTION_LOST = 1
-    EVENT_DATA_RECEIVED   = 2
-    EVENT_DATA_SENT       = 3
+        
+class ProtocolObservation:
+    """
+    This class allows a given protocol to be observed (i.e.,
+    listeners can receive event notifications). When a protocol
+    is observed, its methods are adapted to report events
+    to listeners. A protocol can be un-adapted at any time.
     
-    class ProtocolData(object):
+    Some events have automatic consequences. For example, when
+    connection_made is called, it automatically records the
+    transport and assigns a new transport with an adapted write method.
+    Similarly, when a protocol's connection_lost method is called,
+    it is automatically removed from observation.
+    
+    To prevent duplicate modification, a protocol's adapter
+    is saved. Attempts to create a new adapter are prevented
+    and the existing adapter returned.
+    """
+    OBSERVED_PROTOCOLS    = {}
+    
+    EVENT_CONNECTION_MADE = Constant(intValue=0)
+    EVENT_CONNECTION_LOST = Constant(intValue=1)
+    EVENT_DATA_RECEIVED   = Constant(intValue=2)
+    EVENT_DATA_SENT       = Constant(intValue=3)
+    
+    class ProtocolAdapter:
         def __init__(self, protocol):
-            self.originalConnectionMade = protocol.connectionMade
-            self.originalConnectionLost = protocol.connectionLost
-            self.originalDataReceived   = protocol.dataReceived
+            self.originalConnectionMade = protocol.connection_made
+            self.originalConnectionLost = protocol.connection_lost
+            self.originalDataReceived   = protocol.data_received
             self.transport              = None
             self.originalTransportWrite = None
-            self.listeners = []
+            self.listeners = set([])
             
         def transportData(self, protocol):
             self.transport = protocol.transport
             self.originalTransportWrite = protocol.transport.write
-            protocol.transport.write = lambda *args, **kargs: ProtocolEvents.protocolEvent(protocol, 
+            protocol.transport.write = lambda *args, **kargs: ProtocolObservation.protocolEvent(protocol, 
                                                                      self.originalTransportWrite,
-                                                                     ProtocolEvents.EVENT_DATA_SENT,
+                                                                     ProtocolObservation.EVENT_DATA_SENT,
                                                                      *args, **kargs)
             
         def restoreProtocol(self, protocol):
-            protocol.connectionMade = self.originalConnectionMade
-            protocol.connectionLost = self.originalConnectionLost
-            protocol.dataReceived   = self.originalDataReceived
+            protocol.connection_made = self.originalConnectionMade
+            protocol.connection_lost = self.originalConnectionLost
+            protocol.data_received   = self.originalDataReceived
             if self.transport and self.originalTransportWrite:
                 self.transport.write = self.originalTransportWrite
                 self.transport = None
@@ -119,37 +136,40 @@ class ProtocolEvents(object):
             self.originalConnectionLost = None
             self.originalConnectionMade = None
             self.originalDataReceived   = None
+            
+            if protocol in ProtocolObservation.OBSERVED_PROTOCOLS:
+                del ProtocolObservation.OBSERVED_PROTOCOLS[protocol]
     
     @classmethod
     def protocolEvent(cls, protocol, protocolMethod, event, *args, **kargs):
         r = protocolMethod(*args, **kargs)
-        protocolData = cls.PROTOCOL_LISTENERS.get(protocol, None)
+        protocolData = cls.OBSERVED_PROTOCOLS.get(protocol, None)
         if not protocolData:
             return r
         
         for l in protocolData.listeners:
-            l(protocol, event, args, kargs, r)
+            l(protocol, event, r, args, kargs)
         if event == cls.EVENT_CONNECTION_MADE and protocol.transport:
             protocolData.transportData(protocol)
         if event == cls.EVENT_CONNECTION_LOST:
             protocolData.restoreProtocol(protocol)
-            del cls.PROTOCOL_LISTENERS[protocol]
+            #del cls.PROTOCOL_LISTENERS[protocol]
         return r
     
     @classmethod
     def EnableProtocol(cls, protocol):
-        if not cls.PROTOCOL_LISTENERS.has_key(protocol):
-            protocolData = cls.ProtocolData(protocol)
-            cls.PROTOCOL_LISTENERS[protocol] = protocolData
-            protocol.connectionMade = lambda *args, **kargs: cls.protocolEvent(protocol, 
+        if not protocol in cls.OBSERVED_PROTOCOLS:
+            protocolData = cls.ProtocolAdapter(protocol)
+            cls.OBSERVED_PROTOCOLS[protocol] = protocolData
+            protocol.connection_made = lambda *args, **kargs: cls.protocolEvent(protocol, 
                                                                                protocolData.originalConnectionMade, 
                                                                                cls.EVENT_CONNECTION_MADE, 
                                                                                *args, **kargs)
-            protocol.connectionLost = lambda *args, **kargs: cls.protocolEvent(protocol, 
+            protocol.connection_lost = lambda *args, **kargs: cls.protocolEvent(protocol, 
                                                                                protocolData.originalConnectionLost, 
                                                                                cls.EVENT_CONNECTION_LOST,
                                                                                *args, **kargs)
-            protocol.dataReceived   = lambda *args, **kargs: cls.protocolEvent(protocol, protocolData.originalDataReceived,  
+            protocol.data_received   = lambda *args, **kargs: cls.protocolEvent(protocol, protocolData.originalDataReceived,  
                                                                                cls.EVENT_DATA_RECEIVED,
                                                                                *args, **kargs)
         return protocol
@@ -157,13 +177,22 @@ class ProtocolEvents(object):
     @classmethod
     def Listen(cls, protocol, listener):
         cls.EnableProtocol(protocol)
-        cls.PROTOCOL_LISTENERS[protocol].listeners.append(listener)
+        cls.OBSERVED_PROTOCOLS[protocol].listeners.add(listener)
+        
+    @classmethod
+    def StopListening(cls, protocol, listener):
+        adapter = cls.OBSERVED_PROTOCOLS.get(protocol, None)
+        if not adapter or not listener in adapter.listeners: return
+        
+        adapter.listeners.remove(listener)
+        if not adapter.listeners:
+            adapter.restoreProtocol(protocol)
     
     @classmethod
     def EnableProtocolClass(cls, protocolClass):
         raise Exception("Not yet implemented")    
         
-
+"""
 class ProtocolLoggerAdapter(object):
     ""
     These class-level operations: prevent memory leaks.

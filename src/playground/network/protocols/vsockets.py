@@ -84,7 +84,8 @@ class SocketControl:
     def spawnConnection(self, portIndex):
         if self._type == self.SOCKET_TYPE_CONNECT and len(self._spawnedConnectionKeys) != 0:
             raise Exception("Duplicate Connection on Outbound Connect!")
-            
+        
+        logger.debug("{} spwaning connection on portkey {}. Callback={}:{}".format(self.device(), portIndex, self._callbackAddr, self._callbackPort))
         # create the reverse connection to complete opening the socket
         loop = asyncio.get_event_loop()
         coro = loop.create_connection(lambda: ReverseOutboundSocketProtocol(self, portIndex), 
@@ -93,6 +94,7 @@ class SocketControl:
         futureConnection.add_done_callback(self._spawnFinished)
     
     def _spawnFinished(self, futureConnection):
+        logger.debug("{} spawn completed. {}".format(self.device(), futureConnection))
         if futureConnection.exception() != None:
             # Opening the reverse connection failed. Shut down.
             # this might be a little harsh. It could close many other
@@ -114,10 +116,13 @@ class ReverseOutboundSocketProtocol(Protocol):
         self._portKey = portKey
         self.transport = None
     def connection_made(self, transport):
+        logger.debug("Connection made for reverse")
         self.transport = transport
     def data_received(self, data):
+        logger.debug("writing data from reverse to vnic")
         self._control.device().write(self._portKey, data)
     def connection_lost(self, reason=None):
+        logger.debug("conneciton lost to reverse. reason={}".format(reason))
         self._control.closeSpawnedConnection(self._portKey)
 
 class VNICSocketControlProtocol(Protocol):
