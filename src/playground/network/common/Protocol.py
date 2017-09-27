@@ -64,7 +64,7 @@ class StackingTransport(Transport):
         if self.get_extra_info("peername", None) == None:
             self._extra["peername"] = lowerTransport.get_extra_info("peername", None)
             
-    def lowerTransport():
+    def lowerTransport(self):
         return self._lowerTransport
     
     def close(self):
