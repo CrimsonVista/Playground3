@@ -48,7 +48,7 @@ class ConnectionMadeObserver:
             condition = self.protocols[protocol]
         
             # wait for the connection to be made
-            await condition.waitForPredicate(lambda: self.protocols[protocol] == True)
+            await condition.awaitCondition(lambda: self.protocols[protocol] == True)
         
         # at this point, we're connected. clean up and return
         self.release(protocol)

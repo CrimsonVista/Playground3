@@ -28,3 +28,5 @@ INT32 = INT({Bits:32})
 INT64 = INT({Bits:64})
 
 BOOL = BoolFieldType
+
+LIST = ListFieldType

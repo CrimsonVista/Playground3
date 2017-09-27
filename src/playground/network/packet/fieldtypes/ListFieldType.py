@@ -22,7 +22,7 @@ class ListFieldType(ComplexFieldType):
             for dataElement in data:
                 self.append(dataElement)
         else:
-            raise ValueError("Cannot set a ListFieldType to {}".data)
+            raise ValueError("Cannot set a ListFieldType to {}".format(data))
         # The real data is stored in _dataList. But we use _data to determine
         # if we're "null" (UNSET). So set it to some non UNSET value.
         self._data = len(self._dataList)

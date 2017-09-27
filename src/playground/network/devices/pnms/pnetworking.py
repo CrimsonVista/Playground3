@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 from playground.network.devices.pnms import NetworkManager, DeviceStatusOutputProcessor, RoutesStatusOutputProcessor
 
-import sys 
+import sys, traceback
 
 def failExit(msg, errorCode=-1):
     print("Error: {}".format(msg))
@@ -42,6 +42,18 @@ initialize global will initialize a directory under /var.
     
     command = args.pop(0)
     command = command.lower().strip()
+    
+    try:
+        processCommand(command, args)
+    except Exception as e:
+        print("Error executing '{}':".format(command))
+        print("\t{}".format(e))
+        response = input("See stack trace [y/N]? ")
+        if response.lower().startswith('y'):
+            traceback.print_tb(e.__traceback__)
+            print("\n")
+        
+def processCommand(command, args):
     
     if command == "initialize":
         pathIndex = 0

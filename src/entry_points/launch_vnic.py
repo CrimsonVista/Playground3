@@ -20,7 +20,8 @@ def runVnic(vnic_address, port, statusfile, switch_address, switch_port, daemon)
     # normally, all of this would be global. We have it
     # here so it is not messing with the fork!
     from playground.network.devices import VNIC
-    from playground.common.logging import EnablePresetLogging, PRESET_QUIET, PRESET_VERBOSE 
+    from playground.network.protocols.spmp import HiddenSPMPServerProtocol
+    from playground.common.logging import EnablePresetLogging, PRESET_NONE, PRESET_LEVELS 
     
     import asyncio
     
@@ -38,13 +39,36 @@ def runVnic(vnic_address, port, statusfile, switch_address, switch_port, daemon)
     vnicStatusListeners = VnicStatusListeners()
                 
     class StatusVnic(VNIC):
-        def connected(self):
-            super().connected()
-            vnicStatusListeners.alert(self.connected)
+        def __init__(self, *args, **kargs):
+            super().__init__(*args, **kargs)
+            self.buildSpmpApi()
+        
+        def setLogLevel(self, lvl):
+            EnablePresetLogging(lvl)
+            self._presetLogging = lvl
+        def buildSpmpApi(self):
+            self._presetLogging = PRESET_NONE
+            self.SPMPApi =  {
+                            "verbs"                :(lambda    : ", ".join(list(self.SPMPApi.keys()))),
+                            "get-promsicuity-level":(lambda    : str(self.promiscuousLevel())),
+                            "set-promiscutiy-level":(lambda lvl: self.setPromiscuousLevel(str(lvl))),
+                            "all-log-levels"       :(lambda    : ", ".join(PRESET_LEVELS)),
+                            "get-log-level"        :(lambda    : self._presetLogging),
+                            "set-log-level"        :(lambda lvl: self.setLogLevel(lvl))
+                            }
+        def connectionMade(self):
+            super().connectionMade()
+            vnicStatusListeners.alert(self.connectionMade)
             
-        def disconnected(self):
-            super().disconnected()
-            vnicStatusListeners.alert(self.disconnected)
+        def connectionLost(self):
+            super().connectionLost()
+            vnicStatusListeners.alert(self.connectionLost)
+            
+                
+        def controlConnectionFactory(self):
+            originalProtocol = super().controlConnectionFactory()
+            spmpServerProtocol = HiddenSPMPServerProtocol(originalProtocol, self, self.SPMPApi)
+            return spmpServerProtocol
 
     class StatusManager:
         def __init__(self, statusfile, port, switchIp, switchPort, vnic):
@@ -64,7 +88,8 @@ def runVnic(vnic_address, port, statusfile, switch_address, switch_port, daemon)
             #print("{} writing status {} to {}".format(self._port, status, self._statusfile))
             with open(self._statusfile, "w+") as f:
                 f.write("{}\n{}\n{}".format(self._port, ":".join([self._switchIp, self._switchPort]), status))
-                
+            
+        
     class ConnectToSwitchTask:
         RECONNECT_DELAY = 30
         def __init__(self, vnic, switchIp, switchPort):
@@ -93,7 +118,7 @@ def runVnic(vnic_address, port, statusfile, switch_address, switch_port, daemon)
     # Because the Dameon process does a fork, you need to enable logging (which creates a file)
     # after the fork! So, enable logging within runVnic, rather than outside of it.
     # EnablePresetLogging(PRESET_QUIET)
-    EnablePresetLogging(PRESET_VERBOSE)
+    # EnablePresetLogging(PRESET_VERBOSE)
     asyncio.get_event_loop().set_debug(enabled=True)
     logger.info("pid {} asyncio {}, asyncio loop {}".format(os.getpid(), asyncio, asyncio.get_event_loop()))
     logger.info("""
@@ -113,8 +138,7 @@ def runVnic(vnic_address, port, statusfile, switch_address, switch_port, daemon)
     # up and "operating" even if it can't connect to the switch. So
     # start the server first.    
     coro = loop.create_server(vnic.controlConnectionFactory, host="127.0.0.1", port=port)
-    prot = vnic.controlConnectionFactory()
-    logger.error("Got prot {}".format(prot))
+
     server = loop.run_until_complete(coro)
     servingPort = server.sockets[0].getsockname()[1]
     
