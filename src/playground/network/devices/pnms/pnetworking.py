@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 from playground.network.devices.pnms import NetworkManager, DeviceStatusOutputProcessor, RoutesStatusOutputProcessor
+from playground import Configure
 
 import sys, traceback
 
@@ -56,19 +57,17 @@ initialize global will initialize a directory under /var.
 def processCommand(command, args):
     
     if command == "initialize":
-        pathIndex = 0
+        pathId = Configure.INSTANCE_CONFIG_PATH
         overwrite = False
         while args:
             nextArg = args.pop(0)
-            if nextArg == "local":
-                pathIndex = 0
-            elif nextArg == "global":
-                pathIndex = 1
+            if nextArg.upper() in Configure.SEARCH_PATHS.keys():
+                pathId = nextArg.upper()
             elif nextArg == "overwrite":
                 overwrite = True
             else:
-                failExit("Initialize got unknown option {}.".format(pathType))
-        NetworkManager.InitializeConfigLocation(pathIndex, overwrite=overwrite)
+                failExit("Initialize got unknown option {}.".format(nextArg))
+        Configure.Initialize(pathId, overwrite=overwrite)
         return 0
         
     manager = NetworkManager()

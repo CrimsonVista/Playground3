@@ -30,8 +30,6 @@ class StackingProtocolFactory:
         return ConcreteStackingProtocolFactory
         
     def __init__(self, *factories):
-        if len(factories) < 2:
-            raise Exception("Stack requires at least two factories")
         self._stackFactories = factories
     
     def __call__(self):

@@ -1,4 +1,5 @@
 
+from playground import Configure
 from playground.network.common import PlaygroundAddressBlock
 from playground.common.datastructures import DelegateAdapter
 
@@ -193,16 +194,11 @@ class NetworkManager:
     REGISTERED_DEVICE_TYPES = {}
     
     @classmethod
-    def InitializeConfigLocation(cls, pathIndex, overwrite=False):
+    def InitializeConfigModule(cls, location, overwrite=False):
         """
         This function can be used to initialize a playground network
         management config file (empty).
         """
-        location = cls.SEARCH_PATHS[pathIndex]
-        location = os.path.expanduser(location)
-        if not os.path.exists(location):
-            os.mkdir(location)
-        
         configFile = os.path.join(location, cls.CONFIG_FILE) 
         if os.path.exists(configFile) and overwrite:
             os.unlink(configFile)
@@ -354,11 +350,10 @@ class NetworkManager:
         return devicesView
         
     def _findConfig(self):
-        for path in self.SEARCH_PATHS:
-            path = os.path.expanduser(path)
-            filepath = os.path.join(path, self.CONFIG_FILE)
-            if os.path.exists(filepath):
-                return path, filepath
+        path = Configure.CurrentPath()
+        filepath = os.path.join(path, self.CONFIG_FILE)
+        if os.path.exists(filepath):
+            return path, filepath
         return None, None
         
     def _loadConfig(self, forced=False):
@@ -377,7 +372,7 @@ class NetworkManager:
             self._configLocation, self._configFilePath = self._findConfig()
             
         if not self._configFilePath:
-            raise Exception("{} not found in any of {}".format(self.CONFIG_FILE, ",".join(self.SEARCH_PATHS)))
+            raise Exception("{} not found in search paths".format(self.CONFIG_FILE))
             
         newLastModifiedTime = os.path.getmtime(self._configFilePath)
         if forced or newLastModifiedTime != self._lastModifiedTime:

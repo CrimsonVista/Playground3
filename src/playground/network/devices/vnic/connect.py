@@ -1,10 +1,11 @@
+from playground import Configure
 from playground.network.common import PlaygroundAddress, StackingProtocol
 from playground.network.common.Protocol import ProtocolObservation
 from playground.network.protocols.vsockets import VNICConnectProtocol, VNICListenProtocol, VNICCallbackProtocol
 from playground.network.devices.pnms import NetworkManager
 from playground.asyncio_lib import SimpleCondition
 import playground
-import asyncio
+import asyncio, os, sys, importlib
 
 class ConnectionMadeObserver:
     """
@@ -48,7 +49,7 @@ class ConnectionMadeObserver:
             condition = self.protocols[protocol]
         
             # wait for the connection to be made
-            await condition.awaitCondition(lambda: self.protocols[protocol] == True)
+            await condition.awaitCondition(lambda: self.protocols[protocol] == "connected")
         
         # at this point, we're connected. clean up and return
         self.release(protocol)
@@ -63,16 +64,28 @@ class CallbackService:
         self._completionData = {}
         self._controlProtocols = {}
         self._connectionBackptr = {}
-        self._protocolStack = protocolStack
+        if isinstance(protocolStack, tuple):
+            if len(protocolStack) != 2: 
+                raise Exception("Protocol Stack is a factory or a factory pair")
+            self._protocolStack = protocolStack
+        else:
+            self._protocolStack = protocolStack, protocolStack
         
         # asyncio condition
         self._conditionConnections = SimpleCondition()
         
     def location(self):
         return (self._callbackAddress, self._callbackPort)
+    
+    def buildConnectDataProtocol(self):
+        return self._buildDataProtocol(0)
         
-    def buildDataProtocol(self):
-        higherProtocol = self._protocolStack and self._protocolStack() or None
+    def buildListenDataProtocol(self):
+        return self._buildDataProtocol(1)
+        
+    def _buildDataProtocol(self, connectOrListen):
+        factory = self._protocolStack[connectOrListen]
+        higherProtocol = factory and factory() or None
         return VNICCallbackProtocol(self, higherProtocol)
         
     def newDataConnection(self, spawnTcpPort, dataProtocol):
@@ -176,9 +189,9 @@ class PlaygroundConnector:
             
         self._protocolReadyCondition = SimpleCondition()
         
-    async def create_callback_service(self):
+    async def create_callback_service(self, factory):
         callbackAddress, callbackPort = self._callbackService.location()
-        coro = asyncio.get_event_loop().create_server(self._callbackService.buildDataProtocol, host=callbackAddress, port=callbackPort)
+        coro = asyncio.get_event_loop().create_server(factory, host=callbackAddress, port=callbackPort)
         server = await coro
         servingPort = server.sockets[0].getsockname()[1]
         self._callbackService._callbackPort = servingPort
@@ -186,7 +199,7 @@ class PlaygroundConnector:
         
     async def create_playground_connection(self, protocolFactory, destination, destinationPort, vnicName="default", cbPort=0, timeout=60):
         if not self._ready:
-            await self.create_callback_service()
+            await self.create_callback_service(self._callbackService.buildConnectDataProtocol)
         if not isinstance(destination, PlaygroundAddress):
             destination = PlaygroundAddress.FromString(destination)
             
@@ -218,7 +231,7 @@ class PlaygroundConnector:
         
     async def create_playground_server(self, protocolFactory, sourcePort, host="default", vnicName="default", cbPort=0):
         if not self._ready:
-            await self.create_callback_service()
+            await self.create_callback_service(self._callbackService.buildListenDataProtocol)
             
         # find the address to host on.
         if host == "default":
@@ -291,8 +304,54 @@ class StandardVnicService:
         if device: return device.tcpLocation()
         return None
 
-g_PlaygroundNetworkConnectors = {"default":PlaygroundConnector()}
-def getConnector(connectorName="default"):
-    return g_PlaygroundNetworkConnectors[connectorName]
-def setConnector(connectorName, connector):
-    g_PlaygroundNetworkConnectors[connectorName] = connector
+class PlaygroundConnectorService:
+    
+    @classmethod
+    def InitializeConfigModule(cls, location, overwrite=False):
+        connectorLocation = os.path.join(location, "connectors")
+        if not os.path.exists(connectorLocation):
+            os.mkdir(connectorLocation)
+            
+    def __init__(self):
+        self._connectors = {"default":PlaygroundConnector()}
+        self._loaded = False
+        
+    def _loadConnectorModule(self, path):
+        moduleInit = os.path.join(path, "__init__.py")
+        if not os.path.exists(moduleInit):
+            raise Exception("{} does not represent a python module.".format(path))
+        filename = os.path.basename(path)
+        modulename = os.path.splitext(filename)[0]
+        self._oldConnectors = self._connectors
+        self._connectors = {}
+        importError = None
+        try:
+            importlib.import_module(modulename)
+        except Exception as e:
+            importError = e
+        if len(self._connectors) == 0:
+            imporError = Exception("No connectors imported by module {}".format(path))
+        # todo. identify all imports
+        self._oldConnectors.update(self._connectors)
+        self._connectors = self._oldConnectors
+        if importError:
+            raise importError
+    
+    def reloadConnectors(self, force=False):
+        if self._loaded and not force: return
+        
+        configPath = Configure.CurrentPath()
+        connectorLocation = os.path.join(configPath, "connectors")
+        
+        if connectorLocation not in sys.path:
+            sys.path.insert(0, connectorLocation)
+        for pathName in os.listdir(connectorLocation):
+            self._loadConnectorModule(os.path.join(connectorLocation, pathName))
+    
+    def getConnector(self, connectorName="default"):
+        self.reloadConnectors()
+        return self._connectors[connectorName]
+    
+    def setConnector(self, connectorName, connector):
+        self._connectors[connectorName] = connector
+ConnectorService = PlaygroundConnectorService()

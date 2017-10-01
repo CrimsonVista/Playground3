@@ -235,7 +235,7 @@ def EnablePresetLogging(level):
         # also prints to stderr
     elif level == PRESET_DEBUG:
         Config.enableLogging(additionalModules=["asyncio"])
-        Config.enableHandler(Config.STDERR_HANDLER, evel=logging.NOTSET)
+        Config.enableHandler(Config.STDERR_HANDLER, level=logging.NOTSET)
         Config.enableHandler(Config.createRotatingLogFileHandler(), level=logging.NOTSET)
         # Test is like debug, but doesn't log to a file.
     elif level == PRESET_TEST:

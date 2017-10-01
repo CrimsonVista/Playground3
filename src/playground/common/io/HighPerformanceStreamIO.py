@@ -221,8 +221,8 @@ class MinimumCopyingStreamIO(io.RawIOBase, UpdateableReaderMixin):
             memsize += len(bufferData[1])#.buffer)
         return memsize
 
-MINIMUM_COPYING_STRATEGY = CustomConstant(strvalue="Minimum Copying Strategy")
-STANDARD_LIB_STRATEGY = CustomConstant(strvalue="Python Standard Library Strategy")
+MINIMUM_COPYING_STRATEGY = CustomConstant(strValue="Minimum Copying Strategy")
+STANDARD_LIB_STRATEGY = CustomConstant(strValue="Python Standard Library Strategy")
 DEFAULT_STRATEGY = STANDARD_LIB_STRATEGY
         
 def HighPerformanceStreamIO(initialBuffer=None, strategy=DEFAULT_STRATEGY):
