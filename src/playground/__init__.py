@@ -33,7 +33,7 @@ reloadConnectors = connect.ConnectorService.reloadConnectors
 setConnector = connect.ConnectorService.setConnector
 getConnector = connect.ConnectorService.getConnector
 Connector    = connect.PlaygroundConnector
-Configure.CONFIG_MODULES.append(connect.PlaygroundConnector)
+Configure.CONFIG_MODULES.append(connect.ConnectorService)
 
 
 
