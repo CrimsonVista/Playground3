@@ -57,7 +57,7 @@ initialize global will initialize a directory under /var.
 def processCommand(command, args):
     
     if command == "initialize":
-        pathId = Configure.INSTANCE_CONFIG_PATH
+        pathId = Configure.INSTANCE_CONFIG_KEY
         overwrite = False
         while args:
             nextArg = args.pop(0)
