@@ -2,10 +2,16 @@ from playground.network.packet import PacketType, FIELD_NOT_SET
 from playground.network.packet.fieldtypes import UINT16, UINT32, UINT64, \
                                                  STRING, BUFFER, \
                                                  ComplexFieldType, PacketFields
-from playground.network.packet.fieldtypes.attributes import Optional                                                 
+from playground.network.packet.fieldtypes.attributes import Optional  
+from playground.network.packet.encoders.PlaygroundFramingPacketEncoder import PlaygroundFramingPacketEncoder                                               
 
+class FramedPacketType(PacketType):
+    ENCODER = PlaygroundFramingPacketEncoder
+    
+    DEFINITION_IDENTIFIER = "abstract.FramedPacketType"
+    DEFINITION_VERSION    = "1.0"
 
-class AnnounceLinkPacket(PacketType):
+class AnnounceLinkPacket(FramedPacketType):
     DEFINITION_IDENTIFIER = "switching.AnnounceLinkPacket"
     DEFINITION_VERSION    = "1.0"
     
@@ -13,7 +19,7 @@ class AnnounceLinkPacket(PacketType):
         ("address", STRING)
     ]
 
-class WirePacket(PacketType):
+class WirePacket(FramedPacketType):
     DEFINITION_IDENTIFIER = "switching.WirePacket"
     DEFINITION_VERSION    = "1.0"
     

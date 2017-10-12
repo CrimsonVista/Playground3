@@ -25,8 +25,9 @@ class UpdateableBytesIO(io.BytesIO, UpdateableReaderMixin):
     def peek(self, size=-1):
         if not size or size < 0:
             size = self.available()
-            
-        return self.getbuffer()[self.tell():self.available()].tobytes()
+        offset = self.tell() + size
+        
+        return self.getbuffer()[self.tell():offset].tobytes()
         
     def available(self):
         cur = self.tell()

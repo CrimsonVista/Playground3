@@ -321,8 +321,8 @@ class VNICListenProtocol(Protocol):
         pass # log?
         
 class VNICCallbackProtocol(StackingProtocol):
-    def __init__(self, callbackService, higherProtocol=None):
-        super().__init__(higherProtocol)
+    def __init__(self, callbackService):
+        super().__init__(None)
         self.transport = None
         self._callbackService = callbackService
         self._spawnPort = None
@@ -335,7 +335,8 @@ class VNICCallbackProtocol(StackingProtocol):
         self._spawnPort = transport.get_extra_info("peername")[1]
         self._callbackService.newDataConnection(self._spawnPort, self)
         
-    def setPlaygroundConnectionInfo(self, application, source, sourcePort, destination, destinationPort):
+    def setPlaygroundConnectionInfo(self, stack, application, source, sourcePort, destination, destinationPort):
+        self.setHigherProtocol(stack)
         nextTransport = StackingTransport(self.transport, {"sockname":(source, sourcePort),
                                                             "peername":(destination, destinationPort)})
         p = self

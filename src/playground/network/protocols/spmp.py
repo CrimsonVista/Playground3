@@ -5,19 +5,23 @@ Created on Aug 20, 2013
 '''
 
 import random
-from .packets.management import SPMPPacket, PacketType
+from .packets.management import SPMPPacket, PacketType, FramedSPMPWrapper, FramedPacketType
 from playground.asyncio_lib import SimpleCondition
+from playground.network.common import StackingTransport
 
 from asyncio import Protocol
-import io
+import io, logging
 
+logger = logging.getLogger(__name__)
 
 class SPMPClientProtocol(Protocol):
-    def __init__(self, security=None):
+    def __init__(self, security=None, framed=False):
         self._security = security
         self._responses = {}
         self._responseCondition = SimpleCondition()
+        
         self._deserializer = SPMPPacket.Deserializer()
+        self._framed = framed
         
     def connection_made(self, transport):
         self.transport = transport
@@ -48,7 +52,7 @@ class SPMPClientProtocol(Protocol):
         return self._responses[request.requestId]
 
 class SPMPServerProtocol(Protocol):
-    def __init__(self, device, apiMap, security=None):
+    def __init__(self, device, apiMap, security=None, framed=False):
         '''
         Creates an instance of the ChaerponeProtocol class with the
         server as the argument.
@@ -58,6 +62,7 @@ class SPMPServerProtocol(Protocol):
         self._deserializer = SPMPPacket.Deserializer()
         self._security=security
         self.transport = None
+        self._framed = framed
         
     def connection_lost(self, reason=None):
         self.transport = None
@@ -87,8 +92,8 @@ class SPMPServerProtocol(Protocol):
         else:
             try:
                 response.result = self._apiMap[cmd](*args)
-            except Exception as error:
-                error = str(error)
+            except Exception as e:
+                error = str(e)
         if error:
             response.error = error
         self.transport.write(response.__serialize__())
@@ -115,6 +120,38 @@ class HiddenSPMPServerProtocol(SPMPServerProtocol):
     def connection_lost(self, reason=None):
         super().connection_lost(reason)
         self._mainProtocol.connection_lost(reason)
+        
+class FramedTransport(StackingTransport):
+    def write(self, data):
+        framedPacket = FramedSPMPWrapper(spmpPacket=data)
+        self.lowerTransport().write(framedPacket.__serialize__())
+        
+class FramedProtocolAdapter(Protocol):
+    """
+    TODO: Better divide up the duplicate functionality
+    """
+    def __init__(self, spmpProtocol, alternateFramingProtocol=None):
+        self.spmp = spmpProtocol
+        self.alternateProtocol = alternateFramingProtocol
+        self._deserializer = FramedPacketType.Deserializer()
+        
+    def connection_made(self, transport):
+        self.spmp.connection_made(FramedTransport(transport))
+        if self.alternateProtocol:
+            self.alternateProtocol.connection_made(transport)
+        
+    def data_received(self, data):
+        self._deserializer.update(data)
+        for pkt in self._deserializer.nextPackets():
+            if isinstance(pkt, FramedSPMPWrapper):
+                self.spmp.data_received(pkt.spmpPacket)
+            elif self.alternateProtocol:
+                self.alternateProtocol.data_received(pkt.__serialize__())
+            
+    def connection_lost(self, reason=None):
+        self.spmp.connection_lost(reason)
+        if self.alternateProtocol:
+            self.alternateProtocol.connection_lost(reason)
     
 #if __name__=="__main__":
 #    basicUnitTest()

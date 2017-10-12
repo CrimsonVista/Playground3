@@ -23,7 +23,7 @@ class ComplexFieldType(PacketFieldType):
         
     def _setTypedData(self, data):
         if not isinstance(data, self._dataType):
-            raise ValueError("Invalid data for ComplexFieldType. Must be of type {}.".format(self._dataType))
+            raise ValueError("Invalid data {} for ComplexFieldType. Must be of type {}.".format(data, self._dataType))
         super()._setTypedData(data)
         
     def __call__(self, newAttributes=None):

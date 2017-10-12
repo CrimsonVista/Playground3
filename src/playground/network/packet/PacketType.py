@@ -6,7 +6,7 @@ from playground.network.packet.encoders import DefaultPacketEncoder
 from playground.network.packet.fieldtypes import NamedPacketType, ComplexFieldType, PacketFields, Uint, \
                                                     ListFieldType, StringFieldType, PacketFieldType
 from playground.network.packet.fieldtypes.attributes import MaxValue, Bits                                                  
-from .PacketDefinitionRegistration import g_DefaultPacketDefinitions
+from .PacketDefinitionRegistration import PacketDefinitionSilo
 
 import logging
 logger = logging.getLogger(__name__)
@@ -21,12 +21,20 @@ class PacketDefinitionLoader(type):
     IDENTIFIER_ATTRIBUTE = "DEFINITION_IDENTIFIER"
     VERSION_ATTRIBUTE    = "DEFINITION_VERSION"
     ENCODER_ATTRIBUTE    = "ENCODER"
+    SILO_NAME            = "DEFINITIONS_SILO_NAME"
     DEFINITIONS_STORE    = "DEFINITIONS_STORE"
     
     REQUIRED_ATTRIBUTES = ( IDENTIFIER_ATTRIBUTE, 
                             VERSION_ATTRIBUTE    )
     
     PermitDuplicateRegistrations = False
+    
+    @classmethod
+    def getInheritedAttr(cls, parents, key, default=None):
+        for p in parents:
+            if hasattr(p, key):
+                return getattr(p, key)
+        return default
         
     
     def __new__(cls, name, parents, dict):
@@ -34,14 +42,17 @@ class PacketDefinitionLoader(type):
             if attr not in dict:
                 raise AttributeError("Missing required attribute %s" % attr)
         if cls.ENCODER_ATTRIBUTE not in dict:
-            dict[cls.ENCODER_ATTRIBUTE] = DefaultPacketEncoder
-        if cls.DEFINITIONS_STORE not in dict:
-            dict[cls.DEFINITIONS_STORE] = g_DefaultPacketDefinitions
+            defaultEncoder = cls.getInheritedAttr(parents, cls.ENCODER_ATTRIBUTE, DefaultPacketEncoder)
+            dict[cls.ENCODER_ATTRIBUTE] = defaultEncoder
+        if cls.SILO_NAME not in dict:
+            siloName = cls.getInheritedAttr(parents, cls.SILO_NAME, "__current_silo__")
+            dict[cls.SILO_NAME] = siloName
         
         identifier = dict[cls.IDENTIFIER_ATTRIBUTE]        
         version    = PacketDefinitionVersion.FromString( dict[cls.VERSION_ATTRIBUTE] )    
         
-        packetStore= dict[cls.DEFINITIONS_STORE]
+        packetStore = PacketDefinitionSilo.GetSiloByName(siloName)
+        dict[cls.DEFINITIONS_STORE] = packetStore
         
         if not cls.PermitDuplicateRegistrations and packetStore.hasDefinition(identifier, version):
             raise ValueError("Duplicate registration {} v {}".format(identifier, version))
@@ -50,6 +61,18 @@ class PacketDefinitionLoader(type):
         
         packetStore.registerDefinition(identifier, version, definitionCls)
         return definitionCls
+    
+    @classmethod
+    def forceReload(cls, packetType):
+        packetStore = packetType.DEFINITIONS_STORE
+        identifier = packetType.DEFINITION_IDENTIFIER
+        version = PacketDefinitionVersion.FromString(packetType.DEFINITION_VERSION)
+        packetStore.registerDefinition(identifier, version, packetType)
+        
+    @classmethod
+    def unregister(cls, packetType):
+        packetStore = packetType.DEFINITIONS_STORE
+        packetStore.unregisterDefinition(packetType.DEFINITION_IDENTIFIER)
 
 ######
 # Python Import "feature." If you have a module that is part of a hierarchy,
@@ -146,6 +169,7 @@ class PacketType(NamedPacketType, metaclass=PacketDefinitionLoader):
                         logger.debug("Deserialized message {}. {} bytes remaining".format(result.value, self._stream.tell()))
                         yield result.value
                     except Exception as error:
+                        raise error
                         self._iterator = cls.DeserializeStream(self._stream)
                         logger.debug("Deserialization error {}.".format(error))
                         if self._errHandler: self._errhandler.handleException(error)

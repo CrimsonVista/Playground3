@@ -5,7 +5,7 @@
 from playground.common import CustomConstant as Constant
 from playground.network.protocols.vsockets import VNICSocketControlProtocol
 from playground.network.protocols.switching import PlaygroundSwitchTxProtocol
-from playground.network.protocols.packets.switching_packets import WirePacket
+from playground.network.protocols.packets.switching_packets import WirePacket, FramedPacketType
 from playground.network.common import PortKey
 from playground.network.common import PlaygroundAddress, PlaygroundAddressBlock
 
@@ -315,6 +315,7 @@ def basicUnitTest():
     txPacket4 = WirePacket(source="2.2.2.2", sourcePort=666, destination="2.2.1.5", destinationPort=300, data=b"No Address")
     linkTx.data_received(txPacket4.__serialize__())
     
+    deserializer = FramedPacketType.Deserializer()
     deserializer.update(dumperTransport.sink.getvalue())
     
     dumpPackets = list(deserializer.nextPackets())

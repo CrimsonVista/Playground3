@@ -5,7 +5,7 @@ Created on Aug 20, 2013
 '''
 
 import random
-from .packets.switching_packets import AnnounceLinkPacket, WirePacket, PacketType
+from .packets.switching_packets import AnnounceLinkPacket, WirePacket, FramedPacketType
 from playground.common import Timer, Minutes, Seconds
 
 from asyncio import Protocol
@@ -18,7 +18,7 @@ class PlaygroundSwitchRxProtocol(Protocol):
         server as the argument.
         '''
         self._switch = switch
-        self._deserializer = PacketType.Deserializer()
+        self._deserializer = FramedPacketType.Deserializer()
         self.transport = None
         
     def connection_lost(self, reason=None):

@@ -1,11 +1,12 @@
 from playground import Configure
 from playground.network.common import PlaygroundAddress, StackingProtocol
+from playground.network.packet.PacketDefinitionRegistration import PacketDefinitionSilo
 from playground.network.common.Protocol import ProtocolObservation
 from playground.network.protocols.vsockets import VNICConnectProtocol, VNICListenProtocol, VNICCallbackProtocol
 from playground.network.devices.pnms import NetworkManager
 from playground.asyncio_lib import SimpleCondition
 import playground
-import asyncio, os, sys, importlib
+import asyncio, os, sys, importlib, traceback
 
 class ConnectionMadeObserver:
     """
@@ -43,6 +44,7 @@ class ConnectionMadeObserver:
             condition = self.protocols[protocol]
             self.protocols[protocol] = "connected"
             condition.notify()
+            
     async def awaitConnection(self, protocol):
         # if we don't have the protocol, or it's already done, don't wait.
         if self.protocols.get(protocol, None) != "connected":
@@ -64,35 +66,24 @@ class CallbackService:
         self._completionData = {}
         self._controlProtocols = {}
         self._connectionBackptr = {}
-        if isinstance(protocolStack, tuple):
-            if len(protocolStack) != 2: 
-                raise Exception("Protocol Stack is a factory or a factory pair")
-            self._protocolStack = protocolStack
-        else:
-            self._protocolStack = protocolStack, protocolStack
+        self._protocolStack = protocolStack
         
         # asyncio condition
         self._conditionConnections = SimpleCondition()
         
     def location(self):
         return (self._callbackAddress, self._callbackPort)
-    
-    def buildConnectDataProtocol(self):
-        return self._buildDataProtocol(0)
-        
-    def buildListenDataProtocol(self):
-        return self._buildDataProtocol(1)
-        
-    def _buildDataProtocol(self, connectOrListen):
-        factory = self._protocolStack[connectOrListen]
-        higherProtocol = factory and factory() or None
-        return VNICCallbackProtocol(self, higherProtocol)
         
     def newDataConnection(self, spawnTcpPort, dataProtocol):
         self._dataProtocols[spawnTcpPort] = dataProtocol
         
         if spawnTcpPort in self._completionData and spawnTcpPort in self._dataProtocols:
-            self.buildStack(spawnTcpPort)
+            controlProtocol = self._completionData[spawnTcpPort][0]
+            if isinstance(controlProtocol, VNICListenProtocol):
+                stackFactory = self._protocolStack[1]
+            else:
+                stackFactory = self._protocolStack[0]
+            self.buildStack(stackFactory, spawnTcpPort)
         
     def dataConnectionClosed(self, dataProtocol, spawnTcpPort):
         if spawnTcpPort in self._dataProtocols:
@@ -106,15 +97,22 @@ class CallbackService:
         self._completionData[spawnTcpPort] = (controlProtocol, applicationProtocol, source, sourcePort, destination, destinationPort)
         
         if spawnTcpPort in self._completionData and spawnTcpPort in self._dataProtocols:
-            self.buildStack(spawnTcpPort)
+            if isinstance(controlProtocol, VNICListenProtocol):
+                stackFactory = self._protocolStack[1]
+            else:
+                stackFactory = self._protocolStack[0]
+            self.buildStack(stackFactory, spawnTcpPort)
         
             
-    def buildStack(self, spawnTcpPort):
+    def buildStack(self, stackFactory, spawnTcpPort):
         controlProtocol, applicationProtocol, source, sourcePort, destination, destinationPort = self._completionData[spawnTcpPort]
         
         connectionMadeObserver.watch(applicationProtocol)
         
-        self._dataProtocols[spawnTcpPort].setPlaygroundConnectionInfo(applicationProtocol, source, sourcePort, destination, destinationPort)
+        stackProtocol = stackFactory and stackFactory() or None
+        self._dataProtocols[spawnTcpPort].setPlaygroundConnectionInfo(stackProtocol, applicationProtocol, 
+                                                                      source, sourcePort, 
+                                                                      destination, destinationPort)
         
         self._controlProtocols[controlProtocol] = self._controlProtocols.get(controlProtocol, []) + [self._dataProtocols[spawnTcpPort]]
         self._connectionBackptr[self._dataProtocols[spawnTcpPort]] = controlProtocol
@@ -179,15 +177,31 @@ class PlaygroundServer:
         
 class PlaygroundConnector:
     def __init__(self, vnicService=None, protocolStack=None, callbackAddress="127.0.0.1", callbackPort=0):
-        self._stack = protocolStack
+        if isinstance(protocolStack, tuple):
+            if len(protocolStack) != 2: 
+                raise Exception("Protocol Stack is a factory or a factory pair")
+            self._stack = protocolStack
+        else:
+            self._stack = protocolStack, protocolStack
         self._vnicService = vnicService
-        self._callbackService = CallbackService(callbackAddress, callbackPort, protocolStack)
+        self._callbackService = CallbackService(callbackAddress, callbackPort, self._stack)
         self._ready = False
+        self._trace = traceback.extract_stack()
+        self._module = self._trace[-2].filename
         
         if not vnicService:
             self._vnicService = StandardVnicService()
             
         self._protocolReadyCondition = SimpleCondition()
+        
+    def getClientStackFactory(self):
+        return self._stack[0]
+    
+    def getServerStackFactory(self):
+        return self._stack[1]
+    
+    def getModule(self):
+        return self._module
         
     async def create_callback_service(self, factory):
         callbackAddress, callbackPort = self._callbackService.location()
@@ -199,7 +213,9 @@ class PlaygroundConnector:
         
     async def create_playground_connection(self, protocolFactory, destination, destinationPort, vnicName="default", cbPort=0, timeout=60):
         if not self._ready:
-            await self.create_callback_service(self._callbackService.buildConnectDataProtocol)
+            await self.create_callback_service(lambda: VNICCallbackProtocol(self._callbackService))#.buildConnectDataProtocol)
+        if destination == "localhost":
+            destination = self._vnicService.getVnicPlaygroundAddress(self._vnicService.getDefaultVnic())
         if not isinstance(destination, PlaygroundAddress):
             destination = PlaygroundAddress.FromString(destination)
             
@@ -231,7 +247,8 @@ class PlaygroundConnector:
         
     async def create_playground_server(self, protocolFactory, sourcePort, host="default", vnicName="default", cbPort=0):
         if not self._ready:
-            await self.create_callback_service(self._callbackService.buildListenDataProtocol)
+            await self.create_callback_service(lambda: VNICCallbackProtocol(self._callbackService))
+            #await self.create_callback_service(self._callbackService.buildListenDataProtocol)
             
         # find the address to host on.
         if host == "default":
@@ -315,38 +332,35 @@ class PlaygroundConnectorService:
     def __init__(self):
         self._connectors = {"default":PlaygroundConnector()}
         self._loaded = False
-        
-    def _loadConnectorModule(self, path):
-        moduleInit = os.path.join(path, "__init__.py")
-        if not os.path.exists(moduleInit):
-            raise Exception("{} does not represent a python module.".format(path))
-        filename = os.path.basename(path)
-        modulename = os.path.splitext(filename)[0]
-        self._oldConnectors = self._connectors
-        self._connectors = {}
-        importError = None
-        try:
-            importlib.import_module(modulename)
-        except Exception as e:
-            importError = e
-        if len(self._connectors) == 0:
-            imporError = Exception("No connectors imported by module {}".format(path))
-        # todo. identify all imports
-        self._oldConnectors.update(self._connectors)
-        self._connectors = self._oldConnectors
-        if importError:
-            raise importError
     
     def reloadConnectors(self, force=False):
         if self._loaded and not force: return
         
         configPath = Configure.CurrentPath()
-        connectorLocation = os.path.join(configPath, "connectors")
+        connectorsLocation = os.path.join(configPath, "connectors")
+        connectorsInitPath = os.path.join(connectorsLocation, "__init__.py")
         
-        if connectorLocation not in sys.path:
-            sys.path.insert(0, connectorLocation)
-        for pathName in os.listdir(connectorLocation):
-            self._loadConnectorModule(os.path.join(connectorLocation, pathName))
+        if configPath not in sys.path:
+            sys.path.insert(0, configPath)
+        importData = ""
+        for pathName in os.listdir(connectorsLocation):
+            pathName = os.path.join(connectorsLocation, pathName)
+            moduleName = os.path.basename(pathName)
+            if os.path.exists(os.path.join(pathName, "__init__.py")):
+                importData += "import connectors.{}\n".format(moduleName)
+        with open(connectorsInitPath, "w+") as f:
+            f.write(importData)
+        oldPath = sys.path
+        with PacketDefinitionSilo():
+            """ the silo forces all packet definitions to be in their own "space" """
+            if "connectors" in sys.modules:
+                importlib.reload(sys.modules["connectors"])
+            else:
+                importlib.import_module("connectors")
+        sys.path = oldPath
+        self._loaded = True
+        #    print("Loading module {}".format(pathName))
+        #    self._loadConnectorModule(os.path.join(connectorLocation, pathName))
     
     def getConnector(self, connectorName="default"):
         self.reloadConnectors()
