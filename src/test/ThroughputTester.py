@@ -3,11 +3,7 @@ Created on Oct 3, 2017
 
 @author: seth_
 '''
-
-from lab2_protocol.peep.protocol import PeepServerProtocol, ValidateStrategy
-from lab2_protocol.peep.packets import PEEPPacket
-from playground.network.common import StackingProtocolFactory
-from playground.network.packet.PacketType import PacketType, PacketDefinitionLoader
+from playground.network.packet.PacketType import PacketType
 from playground.network.packet.fieldtypes import BUFFER
 import playground
 import sys, asyncio, hashlib, os
