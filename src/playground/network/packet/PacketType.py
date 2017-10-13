@@ -169,7 +169,7 @@ class PacketType(NamedPacketType, metaclass=PacketDefinitionLoader):
                         logger.debug("Deserialized message {}. {} bytes remaining".format(result.value, self._stream.tell()))
                         yield result.value
                     except Exception as error:
-                        raise error
+                        #raise error
                         self._iterator = cls.DeserializeStream(self._stream)
                         logger.debug("Deserialization error {}.".format(error))
                         if self._errHandler: self._errhandler.handleException(error)
