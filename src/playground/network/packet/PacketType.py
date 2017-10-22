@@ -55,7 +55,7 @@ class PacketDefinitionLoader(type):
         dict[cls.DEFINITIONS_STORE] = packetStore
         
         if not cls.PermitDuplicateRegistrations and packetStore.hasDefinition(identifier, version):
-            raise ValueError("Duplicate registration {} v {}".format(identifier, version))
+            raise ValueError("Duplicate registration {} v {}. Existing version is {}".format(identifier, version, packetStore.getDefinition(identifier, version)))
             
         definitionCls = super().__new__(cls, name, parents, dict)
         

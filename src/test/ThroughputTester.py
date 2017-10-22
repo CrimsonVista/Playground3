@@ -91,6 +91,20 @@ class AutoDataTestConfig(TestConfig):
             txData.append(os.urandom(txSize))
         super().__init__(txData, txData, **options)
 
+class ShutdownBarrier:
+    def __init__(self):
+        self.waiting = set([])
+        
+    def wait(self, o):
+        self.waiting.add(o)
+        
+    def arrive(self, o):
+        if o in self.waiting:
+            self.waiting.remove(o)
+        if not self.waiting:
+            asyncio.get_event_loop().stop()
+ShutdownControl = ShutdownBarrier()
+
 class TestProtocol(asyncio.Protocol):
     """
     This can be both a client and server. Both behave identically
@@ -101,6 +115,7 @@ class TestProtocol(asyncio.Protocol):
         self._noProgressCount = 0
         self._tx = []
         self._rx = []
+        self._rxByteCount = 0
         
     def waitClose(self, lastRxCount):
         if not self._rx or self._noProgressCount == 30:
@@ -128,6 +143,7 @@ class TestProtocol(asyncio.Protocol):
         asyncio.get_event_loop().call_later(txDelay, self.transmit)
         
     def connection_made(self, transport):
+        ShutdownControl.wait(self)
         self.transport=transport
         self._config.recordConnect(self)
         
@@ -138,6 +154,7 @@ class TestProtocol(asyncio.Protocol):
         self.transmit()
         
     def data_received(self, data):
+        self._rxByteCount += len(data)
         self._deserializer.update(data)
         for packet in self._deserializer.nextPackets():
             if self._rx:
@@ -152,8 +169,8 @@ class TestProtocol(asyncio.Protocol):
         self._config.recordClose(self, reason)
         self.transport.close()
         
-        asyncio.get_event_loop().call_later(1, asyncio.get_event_loop().stop)
-
+        #asyncio.get_event_loop().call_later(1, asyncio.get_event_loop().stop)
+        ShutdownControl.arrive(self)
 
 if __name__=="__main__":
     """

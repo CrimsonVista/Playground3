@@ -340,23 +340,24 @@ class PlaygroundConnectorService:
         connectorsLocation = os.path.join(configPath, "connectors")
         connectorsInitPath = os.path.join(connectorsLocation, "__init__.py")
         
+        oldPath = sys.path
         if configPath not in sys.path:
             sys.path.insert(0, configPath)
-        importData = ""
+        if not os.path.exists(connectorsInitPath):
+            with open(connectorsInitPath, "w+") as f:
+                f.write("#dummy init for connectors module")
+                
         for pathName in os.listdir(connectorsLocation):
             pathName = os.path.join(connectorsLocation, pathName)
             moduleName = os.path.basename(pathName)
             if os.path.exists(os.path.join(pathName, "__init__.py")):
-                importData += "import connectors.{}\n".format(moduleName)
-        with open(connectorsInitPath, "w+") as f:
-            f.write(importData)
-        oldPath = sys.path
-        with PacketDefinitionSilo():
-            """ the silo forces all packet definitions to be in their own "space" """
-            if "connectors" in sys.modules:
-                importlib.reload(sys.modules["connectors"])
-            else:
-                importlib.import_module("connectors")
+                dottedName = "connectors.{}".format(moduleName)
+                with PacketDefinitionSilo():
+                    if dottedName in sys.modules:
+                        #TODO: Test if this even works.
+                        importlib.reload(sys.module[dottedName])
+                    else:
+                        importlib.import_module(dottedName)
         sys.path = oldPath
         self._loaded = True
         #    print("Loading module {}".format(pathName))
