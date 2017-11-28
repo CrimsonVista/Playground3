@@ -141,11 +141,13 @@ class EchoControl:
 
         
 
-USAGE = """usage: echotest <mode>
+USAGE = """usage: echotest <mode> [-stack=<stack_name>]
   mode is either 'server' or a server's address (client mode)"""
 
 if __name__=="__main__":
     echoArgs = {}
+    
+    stack = "default"
     
     args= sys.argv[1:]
     i = 0
@@ -156,6 +158,9 @@ if __name__=="__main__":
         else:
             echoArgs[i] = arg
             i+=1
+            
+    if "-stack" in echoArgs:
+        stack = echoArgs["-stack"]
     
     if not 0 in echoArgs:
         sys.exit(USAGE)
@@ -165,7 +170,7 @@ if __name__=="__main__":
     loop.set_debug(enabled=True)
     
     if mode.lower() == "server":
-        coro = playground.getConnector().create_playground_server(lambda: EchoServerProtocol(), 101)
+        coro = playground.getConnector(stack).create_playground_server(lambda: EchoServerProtocol(), 101)
         server = loop.run_until_complete(coro)
         print("Echo Server Started at {}".format(server.sockets[0].gethostname()))
         loop.run_forever()
@@ -175,7 +180,7 @@ if __name__=="__main__":
     else:
         remoteAddress = mode
         control = EchoControl()
-        coro = playground.getConnector().create_playground_connection(control.buildProtocol, remoteAddress, 101)
+        coro = playground.getConnector(stack).create_playground_connection(control.buildProtocol, remoteAddress, 101)
         transport, protocol = loop.run_until_complete(coro)
         print("Echo Client Connected. Starting UI t:{}. p:{}".format(transport, protocol))
         control.connect(protocol)
