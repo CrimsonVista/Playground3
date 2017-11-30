@@ -35,7 +35,7 @@ class StackingProtocolFactory:
     def __call__(self):
         topProtocol = None
         for i in range(len(self._stackFactories)):
-            protocol = self._stackFactories[-i]()
+            protocol = self._stackFactories[-(i+1)]()
             protocol.setHigherProtocol(topProtocol)
             topProtocol = protocol
         return protocol
