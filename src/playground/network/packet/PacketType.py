@@ -145,6 +145,7 @@ class PacketType(NamedPacketType, metaclass=PacketDefinitionLoader):
                 Underlying stream must support "update"
                 """
                 self._stream = (underlyingStream == None and HighPerformanceStreamIO() or underlyingStream)
+                self._streamType = (underlyingStream == None and HighPerformanceStreamIO) or None
                 self._iterator = cls.DeserializeStream(self._stream)
                 self._errHandler = errHandler
                 
@@ -163,10 +164,16 @@ class PacketType(NamedPacketType, metaclass=PacketDefinitionLoader):
                         exhausted = True
                     except StopIteration as result:
                         # get new iterator. NOTE, call this first! Just in case!
+                        # Also, this stream might now automatically clear itself. 
+                        # so we'll do it for ones we manage (ones not pased in).
+                        if self._streamType != None:
+                            oldData = self._stream.read()
+                            self._stream = self._streamType()
+                            self._stream.update(oldData)
                         self._iterator = cls.DeserializeStream(self._stream)
                         
                         # we got a message!
-                        logger.debug("Deserialized message {}. {} bytes remaining".format(result.value, self._stream.tell()))
+                        logger.debug("Deserialized message {}. {}/{} bytes available/total".format(result.value, self._stream.available(), self._stream.tell()))
                         yield result.value
                     except Exception as error:
                         #raise error
