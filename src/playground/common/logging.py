@@ -230,7 +230,7 @@ def EnablePresetLogging(level):
     elif level == PRESET_VERBOSE:
         # logs all messages including those from asyncio, errors to stderr
         Config.enableLogging(additionalModules=["asyncio"])
-        Config.enableHandler(Config.STDERR_HANDLER, level=logging.NOTSET)
+        Config.enableHandler(Config.STDERR_HANDLER, level=logging.ERROR)
         Config.enableHandler(Config.createRotatingLogFileHandler())
         # also prints to stderr
     elif level == PRESET_DEBUG:
