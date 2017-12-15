@@ -6,7 +6,11 @@ class SimpleCondition:
 
     async def awaitCondition(self, predicate):
         with (await self.rawCondition):
-            return await self.rawCondition.wait_for(predicate)
+            satisfied = False
+            while not satisfied:
+                satisfied = await self.rawCondition.wait_for(predicate)
+                satisfied = predicate()
+            return True
 
     async def awaitNotify(self):
         with (await self.rawCondition):

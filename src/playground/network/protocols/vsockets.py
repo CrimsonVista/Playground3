@@ -261,19 +261,19 @@ class VNICConnectProtocol(Protocol):
         self._outboundPort = None
     
     def connection_made(self, transport):
-        self._transport = transport
+        self.transport = transport
         
         callbackAddr, callbackPort = self._callbackService.location()
         openSocketPacket = VNICSocketOpenPacket(callbackAddress=callbackAddr, callbackPort=callbackPort)
         openSocketPacket.connectData = openSocketPacket.SocketConnectData(destination=self._destination, destinationPort=self._destinationPort)
-        self._transport.write(openSocketPacket.__serialize__())
+        self.transport.write(openSocketPacket.__serialize__())
     
     def data_received(self, data):
         self._deserializer.update(data)
         for packet in self._deserializer.nextPackets():
             if isinstance(packet, VNICSocketOpenResponsePacket):
                 if packet.isFailure():
-                    self._transport.close()
+                    self.transport.close()
                 else:
                     self._outboundPort = packet.port
             elif isinstance(packet, VNICConnectionSpawnedPacket):
@@ -283,7 +283,7 @@ class VNICConnectProtocol(Protocol):
                                                         packet.destination, packet.destinationPort)
         
     def connection_lost(self, reason=None):
-        pass # log?
+        logger.debug("Connection Lost - VNIC Connect Protocol")
         
 class VNICListenProtocol(Protocol):
     
@@ -318,7 +318,7 @@ class VNICListenProtocol(Protocol):
                                                         packet.destination, packet.destinationPort)
         
     def connection_lost(self, reason=None):
-        pass # log?
+       logger.debug("Connection Lost - VNIC Listen Protocol")
         
 class VNICCallbackProtocol(StackingProtocol):
     def __init__(self, callbackService):
@@ -338,25 +338,31 @@ class VNICCallbackProtocol(StackingProtocol):
     def setPlaygroundConnectionInfo(self, stack, application, source, sourcePort, destination, destinationPort):
         self.setHigherProtocol(stack)
         nextTransport = StackingTransport(self.transport, {"sockname":(source, sourcePort),
-                                                            "peername":(destination, destinationPort)})
+                                                            "peername":(destination, destinationPort),
+                                                            "spawnport":self._spawnPort})
         p = self
         while p.higherProtocol():
             p = p.higherProtocol()
         p.setHigherProtocol(application)
+        logger.debug("Creating tranport for higher protocol {} with spawnport {}".format(self.higherProtocol(), self._spawnPort))
         self.higherProtocol().connection_made(nextTransport)
         self._higherConnectionMade = True
         while self._backlog:
             self.higherProtocol().data_received(self._backlog.pop(0))
 
     def connection_lost(self, reason=None):
+        logger.debug("low level connection_lost for callback port {}".format(self._spawnPort))
         super().connection_lost(reason)
         self.higherProtocol().transport.close()
         self.higherProtocol().connection_lost(reason)
+        # Checking the log so that we can ensure _spawnPort is always set
+        logger.debug("Connection Lost towards higher protocol for connection initiated through spawned port {}".format(self._spawnPort))
         if self._spawnPort:
             self._callbackService.dataConnectionClosed(self, self._spawnPort)
             
     def data_received(self, buf):
         if self._higherConnectionMade:
+            logger.debug("Pushing data to application, data received on {}".format(self._spawnPort)) 
             if self.higherProtocol():
                 self.higherProtocol().data_received(buf)
         else:

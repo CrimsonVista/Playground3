@@ -6,7 +6,9 @@ from playground.network.protocols.vsockets import VNICConnectProtocol, VNICListe
 from playground.network.devices.pnms import NetworkManager
 from playground.asyncio_lib import SimpleCondition
 import playground
-import asyncio, os, sys, importlib, traceback
+import asyncio, os, sys, importlib, traceback, logging
+
+logger = logging.getLogger(__name__)
 
 class ConnectionMadeObserver:
     """
@@ -86,10 +88,16 @@ class CallbackService:
             self.buildStack(stackFactory, spawnTcpPort)
         
     def dataConnectionClosed(self, dataProtocol, spawnTcpPort):
+        logger.debug("Connection closed for spawned port {}".format(spawnTcpPort))
+
+#        logger.debug("Connection closed on spawned port {} for source and destination {}:{} -> {}:{}".format(spawnTcpPort, source, sourcePort, destination, destinationPort))
         if spawnTcpPort in self._dataProtocols:
             del self._dataProtocols[spawnTcpPort]
         if dataProtocol in self._connectionBackptr:
             controlProtocol = self._connectionBackptr[dataProtocol]
+            if isinstance(controlProtocol, VNICConnectProtocol):
+                controlProtocol.transport.close()
+                logger.debug("Closing control protocol {}".format(controlProtocol))
             self._controlProtocols[controlProtocol].remove(dataProtocol)
             del self._connectionBackptr[dataProtocol]
         
@@ -110,6 +118,13 @@ class CallbackService:
         connectionMadeObserver.watch(applicationProtocol)
         
         stackProtocol = stackFactory and stackFactory() or None
+        stackString = "["+str(stackProtocol)
+        s_p = stackProtocol and stackProtocol.higherProtocol()
+        while s_p:
+            stackString += ","+str(s_p)
+            s_p = s_p.higherProtocol()
+        stackString += "," + str(applicationProtocol) + "]"
+        logger.debug("Connection made on spawned port {} for stack {} {}:{} -> {}:{}".format(spawnTcpPort, stackString, source, sourcePort, destination, destinationPort))
         self._dataProtocols[spawnTcpPort].setPlaygroundConnectionInfo(stackProtocol, applicationProtocol, 
                                                                       source, sourcePort, 
                                                                       destination, destinationPort)
@@ -234,7 +249,9 @@ class PlaygroundConnector:
         coro = self._callbackService.waitForConnections(protocol)
         connections = await asyncio.wait_for(coro, timeout)
         if len(connections) != 1:
-            raise Exception("VNIC Open Failed (Unexpected Error, connections={})!".format(len(connections)))
+            # First close protocol
+            protocol.transport.close()
+            raise Exception("VNIC Open to {} Failed (Unexpected Error, connections={})!".format((destination, destinationPort), len(connections)))
             
         playgroundProtocol = connections[0]
         while isinstance(playgroundProtocol, StackingProtocol) and playgroundProtocol.higherProtocol():

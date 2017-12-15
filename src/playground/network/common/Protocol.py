@@ -61,6 +61,8 @@ class StackingTransport(Transport):
             self._extra["sockname"] = lowerTransport.get_extra_info("sockname", None)
         if self.get_extra_info("peername", None) == None:
             self._extra["peername"] = lowerTransport.get_extra_info("peername", None)
+        if self.get_extra_info("spawnport", None) == None:
+            self._extra["spawnport"] = lowerTransport.get_extra_info("spawnport", None)
             
     def lowerTransport(self):
         return self._lowerTransport
