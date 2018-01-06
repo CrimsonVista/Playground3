@@ -32,6 +32,8 @@ from .network.devices.vnic import connect
 reloadConnectors = connect.ConnectorService.reloadConnectors
 setConnector = connect.ConnectorService.setConnector
 getConnector = connect.ConnectorService.getConnector
+create_server = connect.create_server
+create_connection = connect.create_connection
 Connector    = connect.PlaygroundConnector
 Configure.CONFIG_MODULES.append(connect.ConnectorService)
 

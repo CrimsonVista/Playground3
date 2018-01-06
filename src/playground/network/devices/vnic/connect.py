@@ -262,7 +262,7 @@ class PlaygroundConnector:
             
         return playgroundProtocol.transport, playgroundProtocol
         
-    async def create_playground_server(self, protocolFactory, sourcePort, host="default", vnicName="default", cbPort=0):
+    async def create_playground_server(self, protocolFactory, port, host="default", vnicName="default", cbPort=0):
         if not self._ready:
             await self.create_callback_service(lambda: VNICCallbackProtocol(self._callbackService))
             #await self.create_callback_service(self._callbackService.buildListenDataProtocol)
@@ -282,11 +282,15 @@ class PlaygroundConnector:
             raise Exception("Could not find an active VNIC.")
         
         vnicAddr, vnicPort = location
-        listenProtocol = VNICListenProtocol(sourcePort, self._callbackService, protocolFactory)
+        
+        if not vnicAddr or not vnicPort:
+            raise Exception("Invalid VNIC address and/or port")
+        
+        listenProtocol = VNICListenProtocol(port, self._callbackService, protocolFactory)
         coro = asyncio.get_event_loop().create_connection(lambda: listenProtocol, vnicAddr, vnicPort)
         transport, protocol  = await coro
         
-        server = PlaygroundServer(protocol, host, sourcePort, self._callbackService.getConnections(protocol))
+        server = PlaygroundServer(protocol, host, port, self._callbackService.getConnections(protocol))
         return server
 
 
@@ -338,6 +342,10 @@ class StandardVnicService:
         if device: return device.tcpLocation()
         return None
 
+class NoSuchPlaygroundConnector(Exception):
+    def __init__(self, connectorName):
+        super().__init__("No such playground connector {}".format(connectorName))
+
 class PlaygroundConnectorService:
     
     @classmethod
@@ -382,8 +390,32 @@ class PlaygroundConnectorService:
     
     def getConnector(self, connectorName="default"):
         self.reloadConnectors()
+        if connectorName not in self._connectors:
+            raise NoSuchPlaygroundConnector(connectorName)
         return self._connectors[connectorName]
     
     def setConnector(self, connectorName, connector):
         self._connectors[connectorName] = connector
 ConnectorService = PlaygroundConnectorService()
+
+
+#Asyncio Like Adapter Interface
+def create_server(protocol_factory, host=None, port=None, family=None, *args, **kargs):
+    if host == None: host = "default"
+    if port == None: raise Exception("Playground create_server cannot have a None port")
+    if args or kargs:
+        raise Exception("Playground's create_server does not support any arguments other than host, port, and family")
+    if family == None and host is not None and "://" in host:
+        family, host = host.split("://")
+    elif family == None:
+        family = "default"
+    return playground.getConnector(family).create_playground_server(protocol_factory, host=host, port=port)
+    
+def create_connection(protocol_factory, host, port, family=None, *args, **kargs):
+    if args or kargs:
+        raise Exception("Playground's create_connection does not support any arguments other than host, port, and family")
+    if family == None and host is not None and "://" in host:
+        family, host = host.split("://")
+    elif family == None:
+        family = "default"
+    return playground.getConnector(family).create_playground_connection(protocol_factory, host, port)

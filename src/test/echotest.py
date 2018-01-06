@@ -168,6 +168,8 @@ if __name__=="__main__":
     mode = echoArgs[0]
     loop = asyncio.get_event_loop()
     loop.set_debug(enabled=True)
+    from playground.common.logging import EnablePresetLogging, PRESET_DEBUG
+    EnablePresetLogging(PRESET_DEBUG)
     
     if mode.lower() == "server":
         coro = playground.getConnector(stack).create_playground_server(lambda: EchoServerProtocol(), 101)
