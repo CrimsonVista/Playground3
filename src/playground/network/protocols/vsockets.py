@@ -153,9 +153,11 @@ class VNICSocketControlProtocol(Protocol):
         self.transport and self.transport.close()
         
     def connection_made(self, transport):
+        logger.debug("VNIC socket control spawn {}".format(self))
         self.transport = transport
         
     def connection_lost(self, reason=None):
+        logger.debug("VNIC connection_lost {} for reason {}".format(self, reason))
         if self._mode == self.MODE_DUMP:
             self._vnic.stopDump(self)
         elif self._control:
@@ -163,6 +165,7 @@ class VNICSocketControlProtocol(Protocol):
         self.transport = None
         
     def data_received(self, data):
+        logger.info("VNIC {} received {} bytes of data".format(self, len(data)))
         self._deserializer.update(data)
         for controlPacket in self._deserializer.nextPackets():
             if isinstance(controlPacket, VNICSocketOpenPacket):
@@ -250,7 +253,7 @@ class VNICSocketControlProtocol(Protocol):
         self.transport.write(eventPacket.__serialize__())
         
 class VNICConnectProtocol(Protocol):
-    
+
     def __init__(self, destination, destinationPort, callbackService, applicationProtocolFactory):
         self.transport = None
         self._applicationProtocolFactory = applicationProtocolFactory
@@ -259,6 +262,7 @@ class VNICConnectProtocol(Protocol):
         self._callbackService = callbackService
         self._deserializer = VNICSocketControlPacket.Deserializer()
         self._outboundPort = None
+        self._dataReceived = 0
     
     def connection_made(self, transport):
         self.transport = transport
@@ -266,24 +270,31 @@ class VNICConnectProtocol(Protocol):
         callbackAddr, callbackPort = self._callbackService.location()
         openSocketPacket = VNICSocketOpenPacket(callbackAddress=callbackAddr, callbackPort=callbackPort)
         openSocketPacket.connectData = openSocketPacket.SocketConnectData(destination=self._destination, destinationPort=self._destinationPort)
-        self.transport.write(openSocketPacket.__serialize__())
+        packetBytes = openSocketPacket.__serialize__()
+        logger.debug("Connect connection_made. Sending open {} bytes of data".format(len(packetBytes)))
+        self.transport.write(packetBytes)
     
     def data_received(self, data):
+        self._dataReceived += len(data)
+        logger.debug("Connected data_received {} bytes (cumm {})".format(len(data), self._dataReceived))
         self._deserializer.update(data)
         for packet in self._deserializer.nextPackets():
             if isinstance(packet, VNICSocketOpenResponsePacket):
+                logger.debug("Open callback. Failure? {}".format(packet.isFailure()))
                 if packet.isFailure():
                     self.transport.close()
                 else:
                     self._outboundPort = packet.port
             elif isinstance(packet, VNICConnectionSpawnedPacket):
+                logger.info("Connect callback {}:{} -> {}:{}".format(packet.source, packet.sourcePort,
+                                                                      packet.destination, packet.destinationPort))
                 self._callbackService.completeCallback(self, self._applicationProtocolFactory(),
                                                         packet.spawnTcpPort, 
                                                         packet.source, packet.sourcePort, 
                                                         packet.destination, packet.destinationPort)
         
     def connection_lost(self, reason=None):
-        logger.debug("Connection Lost - VNIC Connect Protocol")
+        logger.info("Connection Lost - VNIC Connect Protocol. Reason = {}. Total Bytes = {}".format(reason, self._dataReceived))
         
 class VNICListenProtocol(Protocol):
     

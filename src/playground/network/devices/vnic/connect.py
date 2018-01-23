@@ -6,7 +6,8 @@ from playground.network.protocols.vsockets import VNICConnectProtocol, VNICListe
 from playground.network.devices.pnms import NetworkManager
 from playground.asyncio_lib import SimpleCondition
 import playground
-import asyncio, os, sys, importlib, traceback, logging
+import asyncio, os, sys, importlib, traceback, logging, time
+from concurrent.futures import TimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +192,8 @@ class PlaygroundServer:
         return super().__getattribute__(attr)
         
 class PlaygroundConnector:
+    CONNECT_PENDING = {}
+    
     def __init__(self, vnicService=None, protocolStack=None, callbackAddress="127.0.0.1", callbackPort=0):
         if isinstance(protocolStack, tuple):
             if len(protocolStack) != 2: 
@@ -208,6 +211,7 @@ class PlaygroundConnector:
             self._vnicService = StandardVnicService()
             
         self._protocolReadyCondition = SimpleCondition()
+        self._backlogCondition = SimpleCondition()
         
     def getClientStackFactory(self):
         return self._stack[0]
@@ -227,6 +231,9 @@ class PlaygroundConnector:
         self._ready = True
         
     async def create_playground_connection(self, protocolFactory, destination, destinationPort, vnicName="default", cbPort=0, timeout=60):
+        startTime = time.time()
+        
+        logger.info("Create playground connection to {}:{}".format(destination, destinationPort))
         if not self._ready:
             await self.create_callback_service(lambda: VNICCallbackProtocol(self._callbackService))#.buildConnectDataProtocol)
         if destination == "localhost":
@@ -242,12 +249,36 @@ class PlaygroundConnector:
         if not location:
             raise Exception("Playground network not ready. Could not find interface to connect to {}:{}".format(destination, destinationPort))
         vnicAddr, vnicPort = location
+        if location not in self.CONNECT_PENDING:
+            self.CONNECT_PENDING[location] = 0
+        
+        while self.CONNECT_PENDING[location] >= 1:
+            logger.debug("{} pending connections. Wait for backlog to clear somewhat.".format(self.CONNECT_PENDING[location]))
+            predicate = lambda: (self.CONNECT_PENDING[location] < 1)
+            await self._backlogCondition.awaitCondition(predicate)
+
+        awaitPendingTime = time.time()
+        self.CONNECT_PENDING[location] += 1
+        logger.debug("Create playground connection to VNIC {}. Pending={}".format(location, self.CONNECT_PENDING[location]))
         connectProtocol = VNICConnectProtocol(destination, destinationPort, self._callbackService, protocolFactory)
         coro = asyncio.get_event_loop().create_connection(lambda: connectProtocol, vnicAddr, vnicPort)
         transport, protocol  = await coro
+        awaitTcpConnectTime = time.time()
         # now we have to wait for protocol to make it's callback.
         coro = self._callbackService.waitForConnections(protocol)
-        connections = await asyncio.wait_for(coro, timeout)
+        try:
+            connections = await asyncio.wait_for(coro, timeout)
+        except TimeoutError:
+            self.CONNECT_PENDING[location] -= 1
+            self._backlogCondition.notify()
+            raise Exception("Could not connect to {}:{} in {} seconds.".format(destination, destinationPort, timeout))
+        self.CONNECT_PENDING[location] -= 1
+        self._backlogCondition.notify()
+        callbackTime = time.time()
+        logger.debug("Complete playground connection. Total Time: {} (Pending {}, TCP {}, callback {})".format(callbackTime-startTime,
+                                                                                                             awaitPendingTime-startTime,
+                                                                                                             awaitTcpConnectTime-awaitPendingTime, 
+                                                                                                             callbackTime-awaitTcpConnectTime))
         if len(connections) != 1:
             # First close protocol
             protocol.transport.close()
