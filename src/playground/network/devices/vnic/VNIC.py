@@ -194,10 +194,12 @@ class VNIC:
             del self._ports[port]
             control.close()
             
+    """
+    This this can be removed
     def controlClosed(self, control):
         portKeys = self._controlChannels.get(control.controlProtocol(),[])
         for pk in portKeys:
-            self.closePort(pk)
+            self.closePort(pk)"""
             
     def write(self, portKey, data):
         logger.debug("VNIC sending message for port key {}".format(portKey))

@@ -28,6 +28,7 @@ class VNICSocketOpenPacket(VNICSocketControlPacket):
         ]
     
     FIELDS = [
+        ("ConnectionId", UINT32),
         ("callbackAddress", STRING),
         ("callbackPort", UINT16),
         
@@ -40,11 +41,18 @@ class VNICSocketOpenPacket(VNICSocketControlPacket):
         
     def isListenType(self):
         return self.connectData == FIELD_NOT_SET and self.listenData != FIELD_NOT_SET
+    
+class VNICSocketClosePacket(VNICSocketControlPacket):
+    DEFINITION_IDENTIFIER =  "vsockets.VNICSocketClosePacket"
+    DEFINITION_VERSION = "1.0"
+    
+    FIELDS = [("ConnectionId", UINT32)]
 
 class VNICSocketOpenResponsePacket(VNICSocketControlPacket):
     DEFINITION_IDENTIFIER = "vsockets.VNICSocketOpenResponsePacket"
     DEFINITION_VERSION    = "1.0"
     FIELDS = [
+        ("ConnectionId", UINT32),
         ("port", UINT16),
         ("errorCode", UINT8({Optional:True})),
         ("errorMessage", STRING({Optional:True}))
@@ -57,6 +65,7 @@ class VNICConnectionSpawnedPacket(VNICSocketControlPacket):
     DEFINITION_IDENTIFIER = "vsockets.VNICConnectionSpawnedPacket"
     DEFINITION_VERSION    = "1.0"
     FIELDS = [
+        ("ConnectionId", UINT32),
         ("spawnTcpPort", UINT16),
         ("source", STRING),
         ("sourcePort", UINT16),

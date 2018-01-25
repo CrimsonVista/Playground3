@@ -2,7 +2,7 @@ from playground import Configure
 from playground.network.common import PlaygroundAddress, StackingProtocol
 from playground.network.packet.PacketDefinitionRegistration import PacketDefinitionSilo
 from playground.network.common.Protocol import ProtocolObservation
-from playground.network.protocols.vsockets import VNICConnectProtocol, VNICListenProtocol, VNICCallbackProtocol
+from playground.network.protocols.vsockets import VNICSocketControlClientProtocol, VNICCallbackProtocol
 from playground.network.devices.pnms import NetworkManager
 from playground.asyncio_lib import SimpleCondition
 import playground
@@ -65,10 +65,10 @@ class CallbackService:
     def __init__(self, callbackAddress, callbackPort, protocolStack):
         self._callbackAddress = callbackAddress
         self._callbackPort = callbackPort
-        self._dataProtocols = {}
-        self._completionData = {}
-        self._controlProtocols = {}
-        self._connectionBackptr = {}
+        self._dataProtocols = {}     # Holds all of the data transfer protocols (callback protocols)
+        self._connectionData = {}    # Holds connection data such as connection ID, etc
+        self._connectionSpawn = {}   # Maps connection Ids to data protocols
+        self._connectionBackptr = {} # Reverse of connectionSpawn
         self._protocolStack = protocolStack
         
         # asyncio condition
@@ -76,45 +76,28 @@ class CallbackService:
         
     def location(self):
         return (self._callbackAddress, self._callbackPort)
+    
+    def tryToBuildStack(self, spawnTcpPort):
+        if spawnTcpPort in self._connectionData and spawnTcpPort in self._dataProtocols:
+            connectionType = self._connectionData[spawnTcpPort][1]
+            if connectionType == "listen":
+                stackFactory = self._protocolStack[1]
+            else:
+                stackFactory = self._protocolStack[0]
+            self.buildStack(stackFactory, spawnTcpPort)
         
     def newDataConnection(self, spawnTcpPort, dataProtocol):
+        logger.debug("Callback service new data connection on tcp port {}".format(spawnTcpPort))
         self._dataProtocols[spawnTcpPort] = dataProtocol
+        self.tryToBuildStack(spawnTcpPort)
         
-        if spawnTcpPort in self._completionData and spawnTcpPort in self._dataProtocols:
-            controlProtocol = self._completionData[spawnTcpPort][0]
-            if isinstance(controlProtocol, VNICListenProtocol):
-                stackFactory = self._protocolStack[1]
-            else:
-                stackFactory = self._protocolStack[0]
-            self.buildStack(stackFactory, spawnTcpPort)
-        
-    def dataConnectionClosed(self, dataProtocol, spawnTcpPort):
-        logger.debug("Connection closed for spawned port {}".format(spawnTcpPort))
-
-#        logger.debug("Connection closed on spawned port {} for source and destination {}:{} -> {}:{}".format(spawnTcpPort, source, sourcePort, destination, destinationPort))
-        if spawnTcpPort in self._dataProtocols:
-            del self._dataProtocols[spawnTcpPort]
-        if dataProtocol in self._connectionBackptr:
-            controlProtocol = self._connectionBackptr[dataProtocol]
-            if isinstance(controlProtocol, VNICConnectProtocol):
-                controlProtocol.transport.close()
-                logger.debug("Closing control protocol {}".format(controlProtocol))
-            self._controlProtocols[controlProtocol].remove(dataProtocol)
-            del self._connectionBackptr[dataProtocol]
-        
-    def completeCallback(self, controlProtocol, applicationProtocol, spawnTcpPort, source, sourcePort, destination, destinationPort):
-        self._completionData[spawnTcpPort] = (controlProtocol, applicationProtocol, source, sourcePort, destination, destinationPort)
-        
-        if spawnTcpPort in self._completionData and spawnTcpPort in self._dataProtocols:
-            if isinstance(controlProtocol, VNICListenProtocol):
-                stackFactory = self._protocolStack[1]
-            else:
-                stackFactory = self._protocolStack[0]
-            self.buildStack(stackFactory, spawnTcpPort)
-        
+    def completeCallback(self, connectionId, connectionType, applicationProtocol, spawnTcpPort, source, sourcePort, destination, destinationPort):
+        logger.debug("Callback service setting up callback for connectionID {}, spawn port {}".format(connectionId, spawnTcpPort))
+        self._connectionData[spawnTcpPort] = (connectionId, connectionType, applicationProtocol, source, sourcePort, destination, destinationPort)
+        self.tryToBuildStack(spawnTcpPort)
             
     def buildStack(self, stackFactory, spawnTcpPort):
-        controlProtocol, applicationProtocol, source, sourcePort, destination, destinationPort = self._completionData[spawnTcpPort]
+        connectionId, connectionType, applicationProtocol, source, sourcePort, destination, destinationPort = self._connectionData[spawnTcpPort]
         
         connectionMadeObserver.watch(applicationProtocol)
         
@@ -130,70 +113,83 @@ class CallbackService:
                                                                       source, sourcePort, 
                                                                       destination, destinationPort)
         
-        self._controlProtocols[controlProtocol] = self._controlProtocols.get(controlProtocol, []) + [self._dataProtocols[spawnTcpPort]]
-        self._connectionBackptr[self._dataProtocols[spawnTcpPort]] = controlProtocol
+        self._connectionSpawn[connectionId] = self._connectionSpawn.get(connectionId, []) + [self._dataProtocols[spawnTcpPort]]
+        self._connectionBackptr[self._dataProtocols[spawnTcpPort]] = connectionId
+        
+        # done with these. Delete the data
+        
         del self._dataProtocols[spawnTcpPort]
-        del self._completionData[spawnTcpPort]
+        del self._connectionData[spawnTcpPort]
 
         # notify that a new connection is received
         self._conditionConnections.notify()
+        
+    def dataConnectionClosed(self, dataProtocol, spawnTcpPort):
+        logger.debug("Connection closed for spawned port {}".format(spawnTcpPort))
 
-    async def waitForConnections(self, controlProtocol, n=1):
-        if not controlProtocol in self._controlProtocols:
-            self._controlProtocols[controlProtocol] = []
+#        logger.debug("Connection closed on spawned port {} for source and destination {}:{} -> {}:{}".format(spawnTcpPort, source, sourcePort, destination, destinationPort))
+        if spawnTcpPort in self._dataProtocols:
+            del self._dataProtocols[spawnTcpPort]
+        if spawnTcpPort in self._connectionData:
+            del self._connectionData[spawnTcpPort]
+        if dataProtocol in self._connectionBackptr:
+            connectionId = self._connectionBackptr[dataProtocol]
+            del self._connectionBackptr[dataProtocol]
+            self._connectionSpawn[connectionId].remove(dataProtocol)
+
+    async def waitForConnections(self, connectionId, n=1):
+        # primarily used in awaiting the complete connection from an outbound connection
+        if not connectionId in self._connectionSpawn:
+            self._connectionSpawn[connectionId] = []
         
         # now wait for the list to be big enough
-        predicate = lambda: len(self._controlProtocols[controlProtocol]) >= n
-        result = await self._conditionConnections.awaitCondition(predicate)
-        return self._controlProtocols[controlProtocol]
+        predicate = lambda: len(self._connectionSpawn[connectionId]) >= n
+        await self._conditionConnections.awaitCondition(predicate)
+        return self._connectionSpawn[connectionId]
         
-    def getConnections(self, controlProtocol):
-        if not controlProtocol in self._controlProtocols:
-            self._controlProtocols[controlProtocol] = []
-        return self._controlProtocols[controlProtocol]
+    def getConnections(self, connectionId):
+        return self._connectionSpawn.get(connectionId, [])
         
 class PlaygroundServer:
     class FakePlaygroundSocket:
-        def __init__(self, protocol, explicitName=None):
-            self.protocol = protocol
+        def __init__(self, explicitName=None):
             self.explicitName = explicitName
             self.close = lambda *args: None
             self.connect = lambda *args: None
             self.recv = lambda *args: None
             self.send = lambda *args: None
         def getpeername(self):
-            if self.protocol.transport:
-                return self.protocol.transport.get_extra_info("peername")
-            return ("None",0)
+            return ("",0)
         def gethostname(self): 
             if self.explicitName: return self.explicitName
-            if self.protocol.transport:
-                return self.protocol.transport.get_extra_info("sockname")
-            return ("None",0)
+            return ("<Unnamed Server Socket>",0)
         
-    def __init__(self, controlProtocol, address, port, connections):
-        self._controlSocket = self.FakePlaygroundSocket(controlProtocol, (address, port))
-        self._connections = []
+    def __init__(self, connectionId, address, port, getConnections, closeServer):
+        self._connectionId = connectionId
+        self._controlSocket = self.FakePlaygroundSocket(explicitName=(address, port))
         self._closed = True
+        self._getConnections = getConnections
+        self._closeServer = closeServer
         # Doesn't do anything yet or support any sockets
         
     def close(self):
         if self._closed: return
         self._closed = True
-        for conn in self._connections:
+        connections = self._getConnections(self._connectionId)
+        for conn in connections:
             if conn.transport: conn.transport.close()
+        self._closeServer(self._connectionId)
         
     def __getattribute__(self, attr):
         if attr == "sockets":
             sockets = [self._controlSocket]
-            for connection in self._connections:
+            connections = self._getConnections(self._connectionId)
+            for connection in connections:
                 sockets.append(self.FakePlaygroundSocket(connection))
             return sockets
         return super().__getattribute__(attr)
         
 class PlaygroundConnector:
-    CONNECT_PENDING = {}
-    
     def __init__(self, vnicService=None, protocolStack=None, callbackAddress="127.0.0.1", callbackPort=0):
         if isinstance(protocolStack, tuple):
             if len(protocolStack) != 2: 
@@ -203,6 +199,7 @@ class PlaygroundConnector:
             self._stack = protocolStack, protocolStack
         self._vnicService = vnicService
         self._callbackService = CallbackService(callbackAddress, callbackPort, self._stack)
+        self._vnicConnections = {}
         self._ready = False
         self._trace = traceback.extract_stack()
         self._module = self._trace[-2].filename
@@ -211,7 +208,6 @@ class PlaygroundConnector:
             self._vnicService = StandardVnicService()
             
         self._protocolReadyCondition = SimpleCondition()
-        self._backlogCondition = SimpleCondition()
         
     def getClientStackFactory(self):
         return self._stack[0]
@@ -249,40 +245,32 @@ class PlaygroundConnector:
         if not location:
             raise Exception("Playground network not ready. Could not find interface to connect to {}:{}".format(destination, destinationPort))
         vnicAddr, vnicPort = location
-        if location not in self.CONNECT_PENDING:
-            self.CONNECT_PENDING[location] = 0
-        
-        while self.CONNECT_PENDING[location] >= 1:
-            logger.debug("{} pending connections. Wait for backlog to clear somewhat.".format(self.CONNECT_PENDING[location]))
-            predicate = lambda: (self.CONNECT_PENDING[location] < 1)
-            await self._backlogCondition.awaitCondition(predicate)
+        if not location in self._vnicConnections:
+            logger.debug("No control conenction to VNIC {} yet. Connecting".format(location))
+            self._vnicConnections[location] = VNICSocketControlClientProtocol(self._callbackService)
+            coro = asyncio.get_event_loop().create_connection(lambda: self._vnicConnections[location], vnicAddr, vnicPort)
+            await coro
+            logger.debug("Control protocol connected.")
 
-        awaitPendingTime = time.time()
-        self.CONNECT_PENDING[location] += 1
-        logger.debug("Create playground connection to VNIC {}. Pending={}".format(location, self.CONNECT_PENDING[location]))
-        connectProtocol = VNICConnectProtocol(destination, destinationPort, self._callbackService, protocolFactory)
-        coro = asyncio.get_event_loop().create_connection(lambda: connectProtocol, vnicAddr, vnicPort)
-        transport, protocol  = await coro
-        awaitTcpConnectTime = time.time()
-        # now we have to wait for protocol to make it's callback.
-        coro = self._callbackService.waitForConnections(protocol)
+        controlTime = time.time()
+        controlProtocol = self._vnicConnections[location]
+        future = controlProtocol.connect(destination, destinationPort, protocolFactory)
+        logger.debug("Awaiting outbound connection to complete")
         try:
-            connections = await asyncio.wait_for(coro, timeout)
+            connectionId, port = await asyncio.wait_for(future, timeout)
+            logger.debug("Connection complete. Outbound port is {} for connection {}".format(port, connectionId))
         except TimeoutError:
-            self.CONNECT_PENDING[location] -= 1
-            self._backlogCondition.notify()
             raise Exception("Could not connect to {}:{} in {} seconds.".format(destination, destinationPort, timeout))
-        self.CONNECT_PENDING[location] -= 1
-        self._backlogCondition.notify()
         callbackTime = time.time()
-        logger.debug("Complete playground connection. Total Time: {} (Pending {}, TCP {}, callback {})".format(callbackTime-startTime,
-                                                                                                             awaitPendingTime-startTime,
-                                                                                                             awaitTcpConnectTime-awaitPendingTime, 
-                                                                                                             callbackTime-awaitTcpConnectTime))
+        logger.debug("Complete playground connection. Total Time: {} (Control {}, callback {})".format(callbackTime-startTime,
+                                                                                                       controlTime-startTime, 
+                                                                                                       callbackTime-controlTime))
+        connections = await self._callbackService.waitForConnections(connectionId, n=1)
         if len(connections) != 1:
-            # First close protocol
-            protocol.transport.close()
-            raise Exception("VNIC Open to {} Failed (Unexpected Error, connections={})!".format((destination, destinationPort), len(connections)))
+            raise Exception("VNIC Unexpected Error connecting to {}:{} (ID {}). Should be one connection, but got {})!".format(destination, 
+                                                                                                                               destinationPort,
+                                                                                                                               connectionId, 
+                                                                                                                               len(connections)))
             
         playgroundProtocol = connections[0]
         while isinstance(playgroundProtocol, StackingProtocol) and playgroundProtocol.higherProtocol():
@@ -317,11 +305,23 @@ class PlaygroundConnector:
         if not vnicAddr or not vnicPort:
             raise Exception("Invalid VNIC address and/or port")
         
-        listenProtocol = VNICListenProtocol(port, self._callbackService, protocolFactory)
-        coro = asyncio.get_event_loop().create_connection(lambda: listenProtocol, vnicAddr, vnicPort)
-        transport, protocol  = await coro
+        if not location in self._vnicConnections:
+            logger.debug("No control conenction to VNIC {} yet. Connecting".format(location))
+            self._vnicConnections[location] = VNICSocketControlClientProtocol(self._callbackService)
+            coro = asyncio.get_event_loop().create_connection(lambda: self._vnicConnections[location], vnicAddr, vnicPort)
+            await coro
+            logger.debug("Control protocol connected.")
         
-        server = PlaygroundServer(protocol, host, port, self._callbackService.getConnections(protocol))
+        controlProtocol = self._vnicConnections[location]
+        future = controlProtocol.listen(port, protocolFactory)
+        logger.debug("Awaiting listening to port {} to complete".format(port))
+        try:
+            connectionId, port = await asyncio.wait_for(future, 30.0)
+            logger.debug("Connection complete. Listening port is {}".format(port))
+        except TimeoutError:
+            raise Exception("Could not open listening port {} in {} seconds.".format(port, 30.0))
+        
+        server = PlaygroundServer(connectionId, host, port, self._callbackService.getConnections, controlProtocol.close)
         return server
 
 
@@ -411,7 +411,7 @@ class PlaygroundConnectorService:
                 with PacketDefinitionSilo():
                     if dottedName in sys.modules:
                         #TODO: Test if this even works.
-                        importlib.reload(sys.module[dottedName])
+                        importlib.reload(sys.modules[dottedName])
                     else:
                         importlib.import_module(dottedName)
         sys.path = oldPath
