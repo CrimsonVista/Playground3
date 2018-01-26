@@ -306,6 +306,7 @@ class VNICSocketControlClientProtocol(Protocol):
         return future
     
     def close(self, connectionId):
+        logger.debug("Closing connection {}".format(connectionId))
         self.transport.write(VNICSocketClosePacket(ConnectionId=connectionId).__serialize__())
     
     def connection_made(self, transport):

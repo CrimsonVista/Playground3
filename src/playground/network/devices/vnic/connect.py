@@ -167,18 +167,20 @@ class PlaygroundServer:
     def __init__(self, connectionId, address, port, getConnections, closeServer):
         self._connectionId = connectionId
         self._controlSocket = self.FakePlaygroundSocket(explicitName=(address, port))
-        self._closed = True
+        self._closed = False
         self._getConnections = getConnections
         self._closeServer = closeServer
         # Doesn't do anything yet or support any sockets
         
     def close(self):
         if self._closed: return
+        logger.debug("Playground server for connection {} calling close".format(self._connectionId))
         self._closed = True
+        self._closeServer(self._connectionId)
         connections = self._getConnections(self._connectionId)
+        logger.debug("Closing {} connections for server with id {}".format(len(connections), self._connectionId))
         for conn in connections:
             if conn.transport: conn.transport.close()
-        self._closeServer(self._connectionId)
         
     def __getattribute__(self, attr):
         if attr == "sockets":
