@@ -84,6 +84,33 @@ if __name__=="__main__":
     PacketDefinitionLoader.PermitDuplicateRegistrations = True
 ##############################################################
     
+class Serializable(PacketFields):
+    # TODO: This class is a generalized serializable class for PacketFields.
+    # See if PacketType can subclass it.
+    
+    ENCODER = DefaultPacketEncoder
+    FIELDS = []
+    
+    @classmethod
+    def PacketType(cls):
+        return ComplexFieldType(cls)
+    
+    @classmethod
+    def Deserialize(cls, buffer):
+        encoder = cls.ENCODER()
+        
+        fieldWrapper = ComplexFieldType(cls)
+        encoder.decode(io.BytesIO(buffer), fieldWrapper)
+        return fieldWrapper.data()
+    
+    def __serialize__(self):
+        encoder = self.ENCODER()
+        writeStream = io.BytesIO()
+        fieldWrapper = self.PacketType()
+        fieldWrapper.setData(self)
+        encoder.encode(writeStream, fieldWrapper)
+        return writeStream.getvalue()
+
 class PacketType(NamedPacketType, metaclass=PacketDefinitionLoader):
     """
     The base class of all Packet Type classes. PacketType

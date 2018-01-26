@@ -1,2 +1,2 @@
 
-from .PacketType   import PacketType, FIELD_NOT_SET
+from .PacketType   import PacketType, Serializable, FIELD_NOT_SET
