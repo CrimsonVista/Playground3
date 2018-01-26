@@ -92,8 +92,8 @@ class Serializable(PacketFields):
     FIELDS = []
     
     @classmethod
-    def PacketType(cls):
-        return ComplexFieldType(cls)
+    def PacketType(cls, newAttributes=None):
+        return ComplexFieldType(cls, newAttributes)
     
     @classmethod
     def Deserialize(cls, buffer):
