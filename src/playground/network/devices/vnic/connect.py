@@ -248,11 +248,18 @@ class PlaygroundConnector:
             raise Exception("Playground network not ready. Could not find interface to connect to {}:{}".format(destination, destinationPort))
         vnicAddr, vnicPort = location
         if not location in self._vnicConnections:
-            logger.debug("No control conenction to VNIC {} yet. Connecting".format(location))
-            self._vnicConnections[location] = VNICSocketControlClientProtocol(self._callbackService)
-            coro = asyncio.get_event_loop().create_connection(lambda: self._vnicConnections[location], vnicAddr, vnicPort)
-            await coro
-            logger.debug("Control protocol connected.")
+            self._vnicConnections[location] = "CONNECTING"
+            logger.info("No control conenction to VNIC {} yet. Connecting".format(location))
+            controlProtocol = VNICSocketControlClientProtocol(self._callbackService)
+            coro = asyncio.get_event_loop().create_connection(lambda: controlProtocol, vnicAddr, vnicPort)
+            res = await coro
+            logger.info("Control protocol connected. {}".format(res))
+            self._vnicConnections[location] = controlProtocol
+        while self._vnicConnections[location] == "CONNECTING":
+            # another co-routing is rying to make the connection
+            logger.debug("Waiting to connect for {}".format(location))
+            await asyncio.sleep(0.5)
+        logger.debug("Ready to proceed for {}".format(location))
 
         controlTime = time.time()
         controlProtocol = self._vnicConnections[location]
@@ -307,14 +314,22 @@ class PlaygroundConnector:
         if not vnicAddr or not vnicPort:
             raise Exception("Invalid VNIC address and/or port")
         
+        logger.info("vnic connections {}".format(self._vnicConnections))
         if not location in self._vnicConnections:
-            logger.debug("No control conenction to VNIC {} yet. Connecting".format(location))
-            self._vnicConnections[location] = VNICSocketControlClientProtocol(self._callbackService)
-            coro = asyncio.get_event_loop().create_connection(lambda: self._vnicConnections[location], vnicAddr, vnicPort)
-            await coro
-            logger.debug("Control protocol connected.")
+            logger.info("No control conenction to VNIC {} yet. Connecting".format(location))
+            controlProtocol = VNICSocketControlClientProtocol(self._callbackService)
+            coro = asyncio.get_event_loop().create_connection(lambda: controlProtocol, vnicAddr, vnicPort)
+            res = await coro
+            logger.info("Control protocol connected. res={}".format(res))
+            self._vnicConnections[location] = controlProtocol
+        while self._vnicConnections[location] == "CONNECTING":
+            # another co-routing is rying to make the connection
+            logger.debug("Waiting to connect for {}".format(location))
+            await asyncio.sleep(0.5)
+        logger.debug("Ready to proceed for {}".format(location))
         
         controlProtocol = self._vnicConnections[location]
+        logger.info("For vnic {}, location {}, got controlProtocol {}, transport {}".format(vnic, location, controlProtocol, controlProtocol.transport))
         future = controlProtocol.listen(port, protocolFactory)
         logger.debug("Awaiting listening to port {} to complete".format(port))
         try:

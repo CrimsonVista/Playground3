@@ -9,7 +9,7 @@ from playground.common import ReturnOrientedGenerator
 from playground.network.packet.fieldtypes.attributes import Optional, ExplicitTag, MaxValue, Bits
 from playground.network.packet.fieldtypes import ComplexFieldType, PacketFieldType, UINT, INT, BOOL, \
                                                     PacketFields, NamedPacketType, ListFieldType, \
-                                                    StringFieldType, BufferFieldType
+                                                    StringFieldType, BufferFieldType, FloatFieldType
 
 from .PacketEncoderBase import PacketEncoderBase
 from .PacketEncodingError import PacketEncodingError
@@ -137,7 +137,24 @@ class IntrinsicTypeStandardEncoder:
         packCode = self._getPackCode(fieldType)
         data = yield from stream.unpackIterator(packCode)
         fieldType.setData(data)    
-        
+
+class FloatEncoder(IntrinsicTypeStandardEncoder):
+    # kept for symmetry with ints. But won't use much
+    SIZE_TO_PACKCODE =  [
+                    (32,"!f"),
+                    (64,"!d")
+                    ]
+    
+    SIZE_TO_PACKCODE_MAP = dict(SIZE_TO_PACKCODE)
+    
+    DEFAULT_BITS = 32
+    
+    def _getPackCode(self, fieldType):
+        maxValue = PacketFieldType.GetAttribute(fieldType, Bits, self.DEFAULT_BITS)
+        packCode = self.SIZE_TO_PACKCODE_MAP[maxValue]
+        return packCode
+PlaygroundStandardPacketEncoder.RegisterTypeEncoder(FloatFieldType, FloatEncoder)
+
 class UintEncoder(IntrinsicTypeStandardEncoder):
     SIZE_TO_PACKCODE =  [
                         (2**8,"!B"),

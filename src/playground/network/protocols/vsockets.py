@@ -294,6 +294,7 @@ class VNICSocketControlClientProtocol(Protocol):
         self._connectionId += 1
         logger.debug("Requesting listenting socket on port {} from vnic (connection ID {})".format(listenPort,
                                                                                        self._connectionId))
+        logger.info("Listen in {}. Has transport {}. For port {}".format(self, self.transport, listenPort))
         callbackAddr, callbackPort = self._callbackService.location()
         openSocketPacket = VNICSocketOpenPacket(ConnectionId=self._connectionId, 
                                                 callbackAddress=callbackAddr, callbackPort=callbackPort)
@@ -310,6 +311,7 @@ class VNICSocketControlClientProtocol(Protocol):
         self.transport.write(VNICSocketClosePacket(ConnectionId=connectionId).__serialize__())
     
     def connection_made(self, transport):
+        logger.info("{} setting transport {}".format(self, transport))
         self.transport=transport
     
     def data_received(self, data):
@@ -327,7 +329,7 @@ class VNICSocketControlClientProtocol(Protocol):
                     del self._futures[packet.ConnectionId]
                 
                 if packet.isFailure():
-                    future.setException(Exception("Could not open socket. Error {} - {}".format(packet.errorCode, packet.errorMessage)))
+                    future.set_exception(Exception("Could not open socket. Error {} - {}".format(packet.errorCode, packet.errorMessage)))
                 elif futureType == "listen":
                     # listening packet is done now. A connect packet waits for outbound to be setup.
                     future.set_result((packet.ConnectionId, packet.port))

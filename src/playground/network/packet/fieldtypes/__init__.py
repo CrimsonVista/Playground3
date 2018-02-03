@@ -9,6 +9,7 @@ from .NamedPacketType import NamedPacketType
 from .ListFieldType import ListFieldType
 from .StringFieldType import StringFieldType
 from .BufferFieldType import BufferFieldType
+from .FloatFieldType import FloatFieldType
 
 from .attributes import Bits
 
@@ -26,6 +27,9 @@ INT8 = INT({Bits:8})
 INT16 = INT({Bits:16})
 INT32 = INT({Bits:32})
 INT64 = INT({Bits:64})
+
+FLOAT32 = FloatFieldType({Bits:32})
+FLOAT64 = FloatFieldType({Bits:64})
 
 BOOL = BoolFieldType
 
