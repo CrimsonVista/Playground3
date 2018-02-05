@@ -296,7 +296,7 @@ class PlaygroundConnector:
             #await self.create_callback_service(self._callbackService.buildListenDataProtocol)
             
         # find the address to host on.
-        if host == "default":
+        if host == "default" or host == "localhost":
             vnic = self._vnicService.getDefaultVnic()
         else:
             vnic = self._vnicService.getVnicByLocalAddress(host) 
