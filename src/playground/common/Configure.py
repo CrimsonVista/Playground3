@@ -49,3 +49,10 @@ class Configure:
             
         for module in cls.CONFIG_MODULES:
             module.InitializeConfigModule(location, overwrite)
+            
+    @classmethod
+    def AddCustomPath(cls, customPathId, customPath):
+        if customPathId in cls.SEARCH_PATHS:
+            raise Exception("Duplicate path id {}".format(customPathId))
+        cls.SEARCH_PATHS[customPathId] = customPath
+        cls.SEARCH_ORDER = [customPathId] + cls.SEARCH_ORDER
