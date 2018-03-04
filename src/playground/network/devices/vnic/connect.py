@@ -145,7 +145,7 @@ class CallbackService:
         # now wait for the list to be big enough
         predicate = lambda: len(self._connectionSpawn[connectionId]) >= n
         await self._conditionConnections.awaitCondition(predicate)
-        return self._connectionSpawn[connectionId]
+        return self._connectionSpawn[connectionId]  
         
     def getConnections(self, connectionId):
         return self._connectionSpawn.get(connectionId, [])
@@ -280,13 +280,21 @@ class PlaygroundConnector:
                                                                                                                                destinationPort,
                                                                                                                                connectionId, 
                                                                                                                                len(connections)))
-            
-        playgroundProtocol = connections[0]
+        dataProtocol = connections[0]    
+        playgroundProtocol = dataProtocol
         while isinstance(playgroundProtocol, StackingProtocol) and playgroundProtocol.higherProtocol():
             playgroundProtocol = playgroundProtocol.higherProtocol()
         
         connectionMadeCoro = connectionMadeObserver.awaitConnection(playgroundProtocol)
-        await asyncio.wait_for(connectionMadeCoro, timeout)
+        try:
+            await asyncio.wait_for(connectionMadeCoro, timeout)
+        except TimeoutError as te:
+            logger.debug("Playground protocol could not connect in {} seconds.".format(timeout))
+            try:
+                dataProtocol.transport.close()
+            except:
+                pass
+            raise te
             
         return playgroundProtocol.transport, playgroundProtocol
         
@@ -408,6 +416,8 @@ class PlaygroundConnectorService:
     
     def reloadConnectors(self, force=False):
         if self._loaded and not force: return
+        
+        self._connectors = {"default":PlaygroundConnector()}
         
         configPath = Configure.CurrentPath()
         connectorsLocation = os.path.join(configPath, "connectors")

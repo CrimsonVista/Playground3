@@ -131,10 +131,16 @@ class AdvancedStdio(object):
 
 
 def FileArgCompleter(s, state):
-    pathParts = os.path.split(s)
+    """pathParts = os.path.split(s)
     pathFirstPart = os.sep.join(pathParts[:-1])
     pathFirstPart = os.path.expanduser(pathFirstPart)
-    pathIncomplete = pathParts[-1]
+    pathIncomplete = pathParts[-1]"""
+    
+    path = os.path.expanduser(s)
+    pathFirstPart = os.path.dirname(path)
+    pathIncomplete = os.path.basename(path)
+    if not pathFirstPart:
+        pathFirstPart = os.getcwd()
     if os.path.exists(pathFirstPart):
         fIndex = 0
         for fileName in os.listdir(pathFirstPart):
@@ -320,6 +326,7 @@ class CLICommand(CompleterInterface):
                     return (True, d)
         except:
             print(traceback.format_exc())
+            return (False, None)
 
     def complete(self, s, state):
         if self.__mode == CLICommand.SUBCMD_MODE:
