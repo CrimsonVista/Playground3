@@ -389,7 +389,7 @@ class VNICCallbackProtocol(StackingProtocol):
     def connection_lost(self, reason=None):
         logger.debug("low level connection_lost for callback port {}".format(self._spawnPort))
         super().connection_lost(reason)
-        self.higherProtocol().transport.close()
+        #self.higherProtocol().transport.close()
         self.higherProtocol().connection_lost(reason)
         # Checking the log so that we can ensure _spawnPort is always set
         logger.debug("Connection Lost towards higher protocol for connection initiated through spawned port {}".format(self._spawnPort))
