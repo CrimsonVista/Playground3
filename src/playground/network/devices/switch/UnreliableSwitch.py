@@ -45,7 +45,7 @@ class ConstantErrorTransport(StackingTransport):
         while self.bytesToCorrupt and self.bytesToCorrupt[0] < dataRange:
             nextByte = self.bytesToCorrupt.pop(0)
             relativeByte = nextByte - self.byteIndex
-            data = data[:relativeByte] + (data[relativeByte] ^ 0xFF) + data[relativeByte+1:]
+            data = data[:relativeByte] + bytes([data[relativeByte] ^ 0xFF]) + data[relativeByte+1:]
         self.byteIndex += len(data)
         if self.byteIndex > self.ErrorHorizon:
             self.byteIndex = 0
