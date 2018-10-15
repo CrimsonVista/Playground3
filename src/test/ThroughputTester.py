@@ -3,10 +3,11 @@ Created on Oct 3, 2017
 
 @author: seth_
 '''
+
 from playground.network.packet.PacketType import PacketType
 from playground.network.packet.fieldtypes import BUFFER
 import playground
-import sys, asyncio, hashlib, os
+import sys, asyncio, hashlib, os, time
 
 def hash(data):
     return hashlib.sha1(data).hexdigest()
@@ -20,12 +21,48 @@ class TestMessagePacket(PacketType):
 class TestConfig:
     def __init__(self, p1Tx, p2Tx, **options):
         self._pData = {
-            "p1": ["peer1", p1Tx, p2Tx, 0],
-            "p2": ["peer2", p2Tx, p1Tx, 0]
+            "p1": ["peer1", p1Tx, p2Tx, 0, 0.0, 0.0],
+            "p2": ["peer2", p2Tx, p1Tx, 0, 0.0, 0.0]
             }
         self.testRecord = []
+        self._doneCount = 0
         self._closedCount = 0
         self._options = options
+        self._lastSignal = 0
+    
+    def recordTxStart(self, p):
+        self._pData[p][4] = time.time()
+        if self._lastSignal == 0: # beginning
+            asyncio.get_event_loop().call_later(1,self.waitClose)
+        self._lastSignal = time.time()
+
+    def waitClose(self):
+        now = time.time()
+        if now - self._lastSignal > 30.0:
+            p1, p2 = self._pData.keys()
+            p1.transport.close()
+            p2.transport.close()
+
+    def recordSignal(self, p):
+        self._lastSignal = time.time()
+
+    def recordRxFinish(self, p):
+        self._pData[p][5] = time.time()
+        self._doneCount += 1
+        if self._doneCount == len(self._pData):
+            p1, p2 = self._pData.keys()
+            p1.transport.close()
+            p2.transport.close()
+
+    def getTestThroughput(self, p):
+        bytesTotal = 0
+        for t in self._pData[p][1]:
+            bytesTotal += len(t)
+        # bad. What if there were more than 2?
+        p1, p2 = list(self._pData.keys())
+        if p == p1: other = p2
+        else: other = p1
+        return bytesTotal, self._pData[other][5]-self._pData[p][4]
         
     def getTestingProtocols(self):
         return tuple(self._pData.keys())
@@ -38,7 +75,7 @@ class TestConfig:
     
     def getTestResults(self, p):
         expectedRxCount = len(self._pData[p][2])
-        correctRxCount = self._pData[p][-1]
+        correctRxCount = self._pData[p][3]
         return (correctRxCount, expectedRxCount)
     
     def setPeerSuccesssfulRx(self, p):
@@ -57,6 +94,7 @@ class TestConfig:
         elif "p2" in self._pData:
             self._pData[p] = self._pData["p2"]
             del self._pData["p2"]
+        self._pData[p][4] = time.time()
         self.testRecord.append("{} ({}) received connection from {}".format(self.getPeerName(p),
                                                                         p.transport.get_extra_info("hostname"),
                                                                         p.transport.get_extra_info("peername")))
@@ -91,20 +129,6 @@ class AutoDataTestConfig(TestConfig):
             txData.append(os.urandom(txSize))
         super().__init__(txData, txData, **options)
 
-class ShutdownBarrier:
-    def __init__(self):
-        self.waiting = set([])
-        
-    def wait(self, o):
-        self.waiting.add(o)
-        
-    def arrive(self, o):
-        if o in self.waiting:
-            self.waiting.remove(o)
-        if not self.waiting:
-            asyncio.get_event_loop().stop()
-ShutdownControl = ShutdownBarrier()
-
 class TestProtocol(asyncio.Protocol):
     """
     This can be both a client and server. Both behave identically
@@ -115,8 +139,7 @@ class TestProtocol(asyncio.Protocol):
         self._noProgressCount = 0
         self._tx = []
         self._rx = []
-        self._rxByteCount = 0
-        
+
     def waitClose(self, lastRxCount):
         if not self._rx or self._noProgressCount == 30:
             self.transport.close()
@@ -130,11 +153,11 @@ class TestProtocol(asyncio.Protocol):
                     return
             else:
                 self._noProgressCount = 0
-        asyncio.get_event_loop().call_later(1,self.waitClose, len(self._rx))
+        asyncio.get_event_loop().call_later(2,self.waitClose, len(self._rx))
         
     def transmit(self):
         if not self._tx:
-            asyncio.get_event_loop().call_later(1,self.waitClose, len(self._rx))
+        #    asyncio.get_event_loop().call_later(1,self.waitClose, len(self._rx))
             return
         self._config.recordTx(self, self._tx[0])
         testPacket = TestMessagePacket(data=self._tx.pop(0))
@@ -143,7 +166,6 @@ class TestProtocol(asyncio.Protocol):
         asyncio.get_event_loop().call_later(txDelay, self.transmit)
         
     def connection_made(self, transport):
-        ShutdownControl.wait(self)
         self.transport=transport
         self._config.recordConnect(self)
         
@@ -151,12 +173,14 @@ class TestProtocol(asyncio.Protocol):
         # constructor
         self._tx = testConfig.getTxTransmissions(self)
         self._rx = testConfig.getExpectedRxTransmissions(self)
+        self._config.recordTxStart(self)
         self.transmit()
         
     def data_received(self, data):
-        self._rxByteCount += len(data)
         self._deserializer.update(data)
+        self._config.recordSignal(self)
         for packet in self._deserializer.nextPackets():
+            print(self,"GOT TEST PACKET")
             if self._rx:
                 expectedRx = self._rx.pop(0)
             else:
@@ -164,13 +188,16 @@ class TestProtocol(asyncio.Protocol):
                 asyncio.get_event_loop().stop()
             
             self._config.recordRx(self, packet.data, expectedRx)
+            if not self._rx:
+                self._config.recordRxFinish(self)
         
     def connection_lost(self, reason):
+        print("connection lost", reason)
         self._config.recordClose(self, reason)
         self.transport.close()
         
-        #asyncio.get_event_loop().call_later(1, asyncio.get_event_loop().stop)
-        ShutdownControl.arrive(self)
+        asyncio.get_event_loop().call_later(1, asyncio.get_event_loop().stop)
+
 
 if __name__=="__main__":
     """
@@ -182,8 +209,8 @@ if __name__=="__main__":
       Client - client is testing stack
       Server - server is testing stack
     """
-    echoArgs = {"--testing-stack": "lab2_protocol",
-                "--reference-stack": "instructor_lab2_protocol",
+    echoArgs = {"--testing-stack": "lab1",
+                "--reference-stack": "instructor_lab1",
                 "--network": "localhost"}
     
     args= sys.argv[1:]
@@ -239,6 +266,10 @@ if __name__=="__main__":
     print("\tDETAILS:")
     for data in testConfig.testRecord:
         print("\t\t",data)
+    clientBytes, clientTime = testConfig.getTestThroughput(client)
+    serverBytes, serverTime = testConfig.getTestThroughput(server)
+    print("\tClient Throughput {} B/{} s = {} B/s".format(clientBytes, clientTime, clientBytes/clientTime))
+    print("\tServer Throughput {} B/{} s = {} B/s".format(serverBytes, serverTime, serverBytes/serverTime))
         
     #transport, protocol = loop.run_until_complete(coro)
     #    print("Echo Client Connected. Starting UI t:{}. p:{}".format(transport, protocol))
