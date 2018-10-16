@@ -11,7 +11,7 @@ def runSwitch(unreliable, host, port, statusfile):
     from playground.network.protocols.spmp import SPMPServerProtocol, FramedProtocolAdapter
     from playground.common.logging import EnablePresetLogging, PRESET_NONE, PRESET_DEBUG, PRESET_LEVELS 
     import asyncio, logging
-    
+
     EnablePresetLogging(PRESET_DEBUG)
     logging.getLogger("playground").debug("start")
     
@@ -67,6 +67,7 @@ def runSwitch(unreliable, host, port, statusfile):
 def main():
     
     parser = argparse.ArgumentParser()
+    parser.add_argument("--working-dir", default=os.getcwd(), help="working directory for the switch process")
     parser.add_argument("--private", action="store_true", help="Only accept local connections.")
     parser.add_argument("--port", type=int, default=0, help="listening port for switch")
     parser.add_argument("--statusfile", help="file to record status; useful for communications")
@@ -75,6 +76,7 @@ def main():
     parser.add_argument("--no-daemon", action="store_true", default=False, help="do not launch switch in a daemon; remain in foreground")
     args = parser.parse_args()
     
+    workingDir = os.path.expanduser(os.path.expandvars(args.working_dir))
     pidFileName = os.path.expanduser(os.path.expandvars(args.pidfile))
     statusFileName = os.path.expanduser(os.path.expandvars(args.statusfile))
     pidFileDir = os.path.dirname(pidFileName)
@@ -86,7 +88,7 @@ def main():
         
     else:
         with daemon.DaemonContext(
-            working_directory=pidFileDir,
+            working_directory=workingDir,
             umask=0o002,
             pidfile=pidfile.TimeoutPIDLockFile(pidFileName),
             ) as context:

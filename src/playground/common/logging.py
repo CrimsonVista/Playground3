@@ -9,6 +9,7 @@ Original File creates Dec 5, 2013
 import logging, logging.handlers
 import random, os, sys
 from argparse import Action
+from .Configure import Configure
 
 class TaggedLogger(object):
     TAG_KEY = "__playlogtag__"
@@ -181,7 +182,7 @@ class PlaygroundLoggingConfiguration(logging.Handler):
             
     def createRotatingLogFileHandler(self, name=None, path=None):
         if not path:
-            path = os.path.expanduser("~/.playground/logs")
+            path = os.path.join(Configure.CurrentPath(), "logs")
             if not os.path.exists(path):
                 try:
                     os.makedirs(path)
