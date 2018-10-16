@@ -320,6 +320,7 @@ class PlaygroundConnector:
         vnicAddr, vnicPort = location
         
         if not vnicAddr or not vnicPort:
+            #print("Problem. vnic",vnic,"got",address,"location",location)
             raise Exception("Invalid VNIC address and/or port")
         
         logger.info("vnic connections {}".format(self._vnicConnections))
@@ -411,13 +412,18 @@ class PlaygroundConnectorService:
             os.mkdir(connectorLocation)
             
     def __init__(self):
-        self._connectors = {"default":PlaygroundConnector()}
+        self._default_connectors = {"default":PlaygroundConnector()}
+        self._connectors = {}
+        self._connectors.update(self._default_connectors)
         self._loaded = False
+        self._autoLoading = False
     
     def reloadConnectors(self, force=False):
         if self._loaded and not force: return
         
-        self._connectors = {"default":PlaygroundConnector()}
+        self._connectors = {}#
+        self._connectors.update(self._default_connectors)
+        #{"default":PlaygroundConnector()}
         
         configPath = Configure.CurrentPath()
         connectorsLocation = os.path.join(configPath, "connectors")
@@ -430,17 +436,22 @@ class PlaygroundConnectorService:
             with open(connectorsInitPath, "w+") as f:
                 f.write("#dummy init for connectors module")
                 
+        self._autoLoading = True
         for pathName in os.listdir(connectorsLocation):
-            pathName = os.path.join(connectorsLocation, pathName)
-            moduleName = os.path.basename(pathName)
-            if os.path.exists(os.path.join(pathName, "__init__.py")):
-                dottedName = "connectors.{}".format(moduleName)
-                with PacketDefinitionSilo():
-                    if dottedName in sys.modules:
-                        #TODO: Test if this even works.
-                        importlib.reload(sys.modules[dottedName])
-                    else:
-                        importlib.import_module(dottedName)
+            try:
+                pathName = os.path.join(connectorsLocation, pathName)
+                moduleName = os.path.basename(pathName)
+                if os.path.exists(os.path.join(pathName, "__init__.py")):
+                    dottedName = "connectors.{}".format(moduleName)
+                    with PacketDefinitionSilo():
+                        if dottedName in sys.modules:
+                            #TODO: Test if this even works.
+                            importlib.reload(sys.modules[dottedName])
+                        else:
+                            importlib.import_module(dottedName)
+            except Exception as e:
+                print("WARNING: could not load auto connector",pathName,"because",e)
+        self._autoLoading = False
         sys.path = oldPath
         self._loaded = True
         #    print("Loading module {}".format(pathName))
@@ -453,6 +464,8 @@ class PlaygroundConnectorService:
         return self._connectors[connectorName]
     
     def setConnector(self, connectorName, connector):
+        if not self._autoLoading:
+            self._default_connectors[connectorName] = connector
         self._connectors[connectorName] = connector
 ConnectorService = PlaygroundConnectorService()
 

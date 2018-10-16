@@ -205,7 +205,7 @@ class PacketType(NamedPacketType, metaclass=PacketDefinitionLoader):
                     except Exception as error:
                         #raise error
                         self._iterator = cls.DeserializeStream(self._stream)
-                        logger.debug("Deserialization error {}.".format(error))
+                        logger.debug("{} deserialization error {}.".format(cls, error))
                         if self._errHandler: self._errhandler.handleException(error)
                         # if no error handler, simply drop errors. Recreate
                         # the stream to get it out of error state

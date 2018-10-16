@@ -194,7 +194,6 @@ class TestProtocol(asyncio.Protocol):
     def connection_lost(self, reason):
         print("connection lost", reason)
         self._config.recordClose(self, reason)
-        self.transport.close()
         
         asyncio.get_event_loop().call_later(1, asyncio.get_event_loop().stop)
 
