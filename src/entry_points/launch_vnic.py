@@ -21,7 +21,7 @@ def runVnic(vnic_address, port, statusfile, switch_address, switch_port, daemon)
     # here so it is not messing with the fork!
     from playground.network.devices import VNIC
     from playground.network.protocols.spmp import HiddenSPMPServerProtocol
-    from playground.common.logging import EnablePresetLogging, PRESET_NONE, PRESET_LEVELS 
+    from playground.common.logging import EnablePresetLogging, PRESET_NONE, PRESET_DEBUG, PRESET_LEVELS 
     
     import asyncio
     
@@ -79,9 +79,9 @@ def runVnic(vnic_address, port, statusfile, switch_address, switch_port, daemon)
             self._switchPort = str(switchPort)
             
         def alert(self, event):
-            if event == self._vnic.connected:
+            if event == self._vnic.connectionMade:
                 self.writeStatus("Connected")
-            elif event == self._vnic.disconnected:
+            elif event == self._vnic.connectionLost:
                 self.writeStatus("Disconnected")
                 
         def writeStatus(self, status):
@@ -98,7 +98,7 @@ def runVnic(vnic_address, port, statusfile, switch_address, switch_port, daemon)
             self._switchPort = switchPort
             
         def alert(self, event):
-            if event == self._vnic.disconnected:
+            if event == self._vnic.connectionLost:
                 asyncio.get_event_loop().call_later(self.RECONNECT_DELAY, self.connect)
                 
         def connect(self):
@@ -119,6 +119,7 @@ def runVnic(vnic_address, port, statusfile, switch_address, switch_port, daemon)
     # after the fork! So, enable logging within runVnic, rather than outside of it.
     # EnablePresetLogging(PRESET_QUIET)
     # EnablePresetLogging(PRESET_VERBOSE)
+    EnablePresetLogging(PRESET_DEBUG)
     asyncio.get_event_loop().set_debug(enabled=True)
     logger.info("pid {} asyncio {}, asyncio loop {}".format(os.getpid(), asyncio, asyncio.get_event_loop()))
     logger.info("""

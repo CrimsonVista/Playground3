@@ -14,6 +14,22 @@ import io, logging
 
 logger = logging.getLogger(__name__)
 
+class LocalAccessSecurityPolicy:
+    def addSecurityParameters(self, clientProtocol, packet):
+        pass
+        
+    def authorized(self, securityProtocol, packet):
+        try:
+            source = securityProtocol.transport.get_extra_info("peername")[0]
+        except:
+            source = None
+        if source == "127.0.0.1":
+            logger.debug("Security check passed. Incoming request from localhost")
+            return True
+        else:
+            logger.debug("Security check FAILED. Incoming request from {}".format(source))
+            return False
+
 class SPMPClientProtocol(Protocol):
     def __init__(self, security=None, framed=False):
         self._security = security
@@ -76,7 +92,8 @@ class SPMPServerProtocol(Protocol):
             self._processSpmpRequest(packet)
         
     def _processSpmpRequest(self, request):
-        if self._security and not self._security.authorized(self.transport, packet):
+        if self._security and not self._security.authorized(self, request):
+            self.transport.close()
             return
         
         # get the command and its args

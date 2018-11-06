@@ -111,6 +111,7 @@ setup(
         'console_scripts': [
             'launch_switch=entry_points.launch_switch:main',
             'launch_vnic=entry_points.launch_vnic:main',
+            'launch_wan=entry_points.launch_wan:main',
             'pnetworking=playground.network.devices.pnms.pnetworking:main'
         ],
     },

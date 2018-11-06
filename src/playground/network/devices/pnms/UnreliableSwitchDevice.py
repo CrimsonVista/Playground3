@@ -1,7 +1,6 @@
 from .NetworkAccessPoint import NetworkAccessPointDevice
 from playground.common.os import getCmdOutput
-from playground.network.protocols.spmp import SPMPClientProtocol, FramedProtocolAdapter
-import asyncio
+
 
 class UnreliableSwitchDevice(NetworkAccessPointDevice):
     REGISTER_DEVICE_TYPE_NAME = "unreliable_switch"
@@ -38,16 +37,4 @@ class UnreliableSwitchDevice(NetworkAccessPointDevice):
         else:
             self._pnms.postAlert(self.enable, True)
             
-    def query(self, verb, args):
-        addr, port = self.tcpLocation()
-        loop = asyncio.get_event_loop()
-        coro = loop.create_connection(lambda: FramedProtocolAdapter(SPMPClientProtocol()), host=addr, port=port)
-        if loop.is_running():
-            (transport, protocol) = asyncio.wait_for(coro, timeout=10)
-            result, error = asyncio.wait(protocol.spmp.query(verb, *args))
-        else:
-            (transport, protocol) = loop.run_until_complete(coro)
-            result, error = loop.run_until_complete(protocol.spmp.query(verb, *args))
-        if error != None:
-            raise Exception(error)
-        return result
+    

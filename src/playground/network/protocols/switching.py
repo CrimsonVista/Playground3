@@ -43,7 +43,7 @@ class PlaygroundSwitchRxProtocol(Protocol):
                     packetBytes = packet.__serialize__()
                     destinationProtocol.transport.write(packetBytes)
             else:
-                self._switch.handleExtensionPacket(protocol, packet)
+                self._switch.handleExtensionPacket(self, packet)
             #errReporter.error("Unexpected message received", exception=NetworkError.UnexpectedPacket(packet))
             
 class PlaygroundSwitchTxProtocol(Protocol):

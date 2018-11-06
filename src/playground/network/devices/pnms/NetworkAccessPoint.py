@@ -1,4 +1,6 @@
 from .PNMSDevice import PNMSDevice
+from playground.network.protocols.spmp import SPMPClientProtocol, FramedProtocolAdapter
+import asyncio
 
 class NetworkAccessPointDevice(PNMSDevice):
     CONFIG_OPTION_TYPE    = "physical_connection_type"
@@ -109,4 +111,17 @@ class NetworkAccessPointDevice(PNMSDevice):
         verb = self._sanitize(verb)
         
         raise Exception("Unknown configure verb {}.".format(verb))
-        
+    
+    def query(self, verb, args):
+        addr, port = self.tcpLocation()
+        loop = asyncio.get_event_loop()
+        coro = loop.create_connection(lambda: FramedProtocolAdapter(SPMPClientProtocol()), host=addr, port=port)
+        if loop.is_running():
+            (transport, protocol) = asyncio.wait_for(coro, timeout=10)
+            result, error = asyncio.wait(protocol.spmp.query(verb, *args))
+        else:
+            (transport, protocol) = loop.run_until_complete(coro)
+            result, error = loop.run_until_complete(protocol.spmp.query(verb, *args))
+        if error != None:
+            raise Exception(error)
+        return result
