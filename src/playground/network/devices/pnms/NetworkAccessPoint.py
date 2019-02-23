@@ -20,6 +20,14 @@ class NetworkAccessPointDevice(PNMSDevice):
     
     CONFIG_TYPE_DEFAULT = CONFIG_TYPE_MANAGED
     
+    @classmethod
+    def initialize_help(cls):
+        return (
+"""{name} managed
+          local port
+          public port
+          remote ip port""".format(name=cls.REGISTER_DEVICE_TYPE_NAME))
+    
     def _parseStatusFile(self, statusFile):
         with open(statusFile) as f:
             port = int(f.readline())

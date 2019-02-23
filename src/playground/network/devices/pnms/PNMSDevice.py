@@ -53,6 +53,10 @@ class PNMSDevice(metaclass=PNMSDeviceLoader):
     
     REGISTER_DEVICE_TYPE_NAME = None # All abstract classes should leave this none. All concrete classes must specify.
     
+    @classmethod
+    def initialize_help(cls):
+        return "{name} [ARGS]".format(name=cls.REGISTER_DEVICE_TYPE_NAME)
+    
     def __init__(self, deviceName):
         self._pnms = None
         self._config = None
