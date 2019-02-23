@@ -39,7 +39,7 @@ class VnicDeviceStatusOutputProcessor(PNMSDeviceStatusOutputProcessor):
     def __init__(self):
         super().__init__(VnicDevice.REGISTER_DEVICE_TYPE_NAME)
         self._vnicTemplate = "\tPlayground Address: {playground_address}\n"
-        self._vnicTemplate += "\tConnected To: {access_point}\n"
+        self._vnicTemplate += "\tConnected To: {access_point} ({connection_status})\n"
         self._vnicTemplate += "\tRoutes:\n"
         
     def process(self, vnic):
@@ -54,7 +54,8 @@ class VnicDeviceStatusOutputProcessor(PNMSDeviceStatusOutputProcessor):
         
         outputString = deviceTemplate
         outputString += self._vnicTemplate.format(playground_address=vnic.address(),
-                                                   access_point=connectedToDeviceName)
+                                                   access_point=connectedToDeviceName,
+                                                   connection_status=vnic.connectionStatus())
         for route in vnic.routes():
             outputString += "\t\t{}\n".format(route)
         return outputString

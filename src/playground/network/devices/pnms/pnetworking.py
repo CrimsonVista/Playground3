@@ -65,6 +65,7 @@ devices-types are:
         add_devices = ""
         for device_type in NetworkManager.REGISTERED_DEVICE_TYPES:
             helplines = NetworkManager.REGISTERED_DEVICE_TYPES[device_type].initialize_help()
+            if not helplines: continue
             # helplines may be multiple lines. tab the beginning, and every newline
             helplines = "\t"+helplines
             helplines = helplines.replace("\n","\n\t")
@@ -73,6 +74,54 @@ devices-types are:
             usage=self.subcommand_usage('add'),
             add_devices=add_devices
         )
+        
+        subcmd_help["remove"] = ("""
+\t%{usage}
+
+Command 'remove' eliminates a virtual devices from this playground location"""
+        ).format(
+            usage=self.subcommand_usage('remove')
+        )
+        
+        subcmd_help["config"] = (
+"""
+\t{usage}
+
+Command 'config' further configures an initialized
+device if necessary. Not all devices require 
+configuration. Those that do include:
+
+{add_devices}
+    """)
+        add_devices = ""
+        for device_type in NetworkManager.REGISTERED_DEVICE_TYPES:
+            helplines = NetworkManager.REGISTERED_DEVICE_TYPES[device_type].config_help()
+            if not helplines: continue
+            # helplines may be multiple lines. tab the beginning, and every newline
+            helplines = "\t"+helplines
+            helplines = helplines.replace("\n","\n\t")
+            add_devices += helplines +"\n"
+        subcmd_help["config"] = subcmd_help["config"].format(
+            usage=self.subcommand_usage('config'),
+            add_devices=add_devices
+        )
+        
+        subcmd_help["query"] = ("""
+\t{usage}
+
+Command 'query' sends a real-time message 
+to the device to ask about its state or set
+state dynamically. To determine if a device
+supports querying, use the following command:
+
+    query <device> verbs
+    
+If the device supports querying, it will send
+back a list of verbs that it understands. Otherwise,
+there will be no answer.""").format(
+            usage=self.subcommand_usage('query')
+        )
+        
         return subcmd_help
 
     def __init__(self, stdoutFunction=print, stderrFunction=print, failFunction=sys.exit):
@@ -172,7 +221,7 @@ commands:
         add_parser.add_argument("device_type",type=str)
         add_parser.add_argument("args",nargs=argparse.REMAINDER)
         add_parser.set_defaults(
-            func=lambda args: self_manager.addDevice(args.device, args.deviceType, args.args)
+            func=lambda args: self._manager.addDevice(args.device, args.device_type, args.args)
         )
         
         remove_parser = commands.add_parser('remove', add_help=False, formatter_class=sub_formatter)

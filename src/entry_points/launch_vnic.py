@@ -42,6 +42,7 @@ def runVnic(vnic_address, port, statusfile, switch_address, switch_port, daemon)
         def __init__(self, *args, **kargs):
             super().__init__(*args, **kargs)
             self.buildSpmpApi()
+            self._spmp_connection_status = "Not Connected"
         
         def setLogLevel(self, lvl):
             EnablePresetLogging(lvl)
@@ -54,14 +55,17 @@ def runVnic(vnic_address, port, statusfile, switch_address, switch_port, daemon)
                             "set-promiscutiy-level":(lambda lvl: self.setPromiscuousLevel(str(lvl))),
                             "all-log-levels"       :(lambda    : ", ".join(PRESET_LEVELS)),
                             "get-log-level"        :(lambda    : self._presetLogging),
-                            "set-log-level"        :(lambda lvl: self.setLogLevel(lvl))
+                            "set-log-level"        :(lambda lvl: self.setLogLevel(lvl)),
+                            "switch-live"          :(lambda    : self._spmp_connection_status)
                             }
         def connectionMade(self):
             super().connectionMade()
+            self._spmp_connection_status = "Connected"
             vnicStatusListeners.alert(self.connectionMade)
             
         def connectionLost(self):
             super().connectionLost()
+            self._spmp_connection_status = "Not Connected"
             vnicStatusListeners.alert(self.connectionLost)
             
                 

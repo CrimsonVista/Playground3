@@ -24,9 +24,13 @@ class NetworkAccessPointDevice(PNMSDevice):
     def initialize_help(cls):
         return (
 """{name} managed
-          local port
-          public port
-          remote ip port""".format(name=cls.REGISTER_DEVICE_TYPE_NAME))
+       local <port>
+       public <port>
+       remote <ip> <port>""").format(name=cls.REGISTER_DEVICE_TYPE_NAME)
+          
+    @classmethod
+    def config_help(cls):
+        return None # No valid configuration verbs
     
     def _parseStatusFile(self, statusFile):
         with open(statusFile) as f:

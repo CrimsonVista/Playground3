@@ -16,6 +16,17 @@ class InterfaceDevice(PNMSDevice):
     
     CONFIG_ROUTE_DEFAULT = "default"
     
+    @classmethod
+    def initialize_help(cls):
+        return ("{} <playground address>".format(cls.REGISTER_DEVICE_TYPE_NAME))
+        
+    @classmethod
+    def config_help(cls):
+        return (
+cls.REGISTER_DEVICE_TYPE_NAME + """ connect <switch_name>
+       disconnect <switch_name>
+       route {add,remove} {<address block>,default}""")
+    
     def _reloadRuntimeData(self):
         connectedTo = self.connectedTo()
         if connectedTo == None: return
@@ -78,6 +89,17 @@ class InterfaceDevice(PNMSDevice):
     def connectedTo(self):
         connectionsView, connectionsApi = self._pnms.getSectionAPI(NetworkManager.CONNECTIONS_SECTION_NAME)
         return connectionsView.lookupConnection(self.name())
+        
+    def connectionStatus(self):
+        statusFile, pidFile, lockFile = self._getDeviceRunFiles()
+        with open(statusFile) as f:
+            status = f.read()
+        if "disconnected" in status.lower():
+            return "Failed"
+        elif "connected" in status.lower():
+            return "Live"
+        else:
+            return "Unknown"
         
     def routes(self):
         routesView, routesApi = self._pnms.getSectionAPI(NetworkManager.ROUTES_SECTION_NAME)
