@@ -26,7 +26,7 @@ that includes a config file and various necessary subdirectories
 underneath a .playground directory. This .playground dir can be
 placed in a global location for all users (with appropriate
 permissions), a local location for the current user, or an instance
-location, which is the current directory. The optional overwrite
+location, in a directory specified by PLAYGROUND_INSTANCE. The optional overwrite
 argument, when set to true, will re-initialize the location erasing
 the existing configuration.""").format(
             usage=self.subcommand_usage('initialize')
@@ -132,7 +132,9 @@ there will be no answer.""").format(
             self._currentPath = Configure.CurrentPath()
             self._manager = NetworkManager()
             self._manager.loadConfiguration()
-        except:
+        except Exception as e:
+            print(e)
+            print("no path")
             self._currentPath = None
             self._manager = None
         self.init_argument_handler()
@@ -189,7 +191,10 @@ commands:
         
     def init_argument_handler(self):
         self._topargs = argparse.ArgumentParser(add_help=False)
-        commands = self._topargs.add_subparsers(dest="command")
+        self._topargs.set_defaults(
+            func=self.help_handler
+        )
+        commands = self._topargs.add_subparsers(dest="subcommand")
         self._commands = commands
         sub_formatter = SimplifiedUsageFormatter
         
@@ -277,7 +282,7 @@ commands:
         try:
             args.func(args)
         except Exception as e:
-            self._error("Error executing '{}':".format(sys.argv[1]))
+            self._error("Error executing pnetworking")
             self._error("\t{}".format(e))
             response = input("See stack trace [y/N]? ")
             if response.lower().startswith('y'):

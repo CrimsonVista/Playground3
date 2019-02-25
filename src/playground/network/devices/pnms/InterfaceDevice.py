@@ -91,6 +91,8 @@ cls.REGISTER_DEVICE_TYPE_NAME + """ connect <switch_name>
         return connectionsView.lookupConnection(self.name())
         
     def connectionStatus(self):
+        if not self.enabled():
+            return "Disabled"
         statusFile, pidFile, lockFile = self._getDeviceRunFiles()
         with open(statusFile) as f:
             status = f.read()

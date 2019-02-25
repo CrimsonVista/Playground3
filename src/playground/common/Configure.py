@@ -7,7 +7,10 @@ import playground
 import os
 
 class Configure:
-    INSTANCE_CONFIG_PATH = os.path.join(playground.STARTUP_DIR, ".playground")
+    if "PLAYGROUND_INSTANCE" in os.environ:
+        INSTANCE_CONFIG_PATH = os.path.join(os.environ["PLAYGROUND_INSTANCE"], ".playground")
+    else:
+        INSTANCE_CONFIG_PATH = None
     LOCAL_CONFIG_PATH    = "~/.playground"
     GLOBAL_CONFIG_PATH   = "/var/playground"
     
@@ -19,7 +22,9 @@ class Configure:
                     LOCAL_CONFIG_KEY       :LOCAL_CONFIG_PATH, 
                     GLOBAL_CONFIG_KEY      :GLOBAL_CONFIG_PATH}
     
-    SEARCH_ORDER = [INSTANCE_CONFIG_KEY, LOCAL_CONFIG_KEY, GLOBAL_CONFIG_KEY]
+    SEARCH_ORDER = [LOCAL_CONFIG_KEY, GLOBAL_CONFIG_KEY]
+    if INSTANCE_CONFIG_PATH:
+        SEARCH_ORDER.insert(0, INSTANCE_CONFIG_KEY)
     
     CONFIG_MODULES = []
     
@@ -30,6 +35,8 @@ class Configure:
         management config file (empty).
         """
         location = cls.SEARCH_PATHS[pathId]
+        if pathId == cls.INSTANCE_CONFIG_KEY and location == None:
+            raise Exception("Cannot initialize playground. PLAYGROUND_INSTANCE unconfigured.")
         location = os.path.expanduser(location)
         return location
     
@@ -37,7 +44,7 @@ class Configure:
     def CurrentPath(cls):
         for searchKey in cls.SEARCH_ORDER:
             searchLocation = cls.ConfigPath(searchKey)
-            if os.path.exists(searchLocation):
+            if searchLocation and os.path.exists(searchLocation):
                 return searchLocation
         raise Exception("No configure path found.")
     
