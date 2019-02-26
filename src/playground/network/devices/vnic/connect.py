@@ -347,7 +347,7 @@ class PlaygroundConnector:
         except TimeoutError:
             raise Exception("Could not open listening port {} in {} seconds.".format(port, 30.0))
         
-        server = PlaygroundServer(connectionId, host, port, self._callbackService.getConnections, controlProtocol.close)
+        server = PlaygroundServer(connectionId, address, port, self._callbackService.getConnections, controlProtocol.close)
         return server
 
 
