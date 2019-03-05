@@ -160,9 +160,11 @@ class PlaygroundServer:
             self.send = lambda *args: None
         def getpeername(self):
             return ("",0)
-        def gethostname(self): 
+        def getsockname(self):
             if self.explicitName: return self.explicitName
             return ("<Unnamed Server Socket>",0)
+        def gethostname(self): 
+            return self.getsockname()[0]
         
     def __init__(self, connectionId, address, port, getConnections, closeServer):
         self._connectionId = connectionId
