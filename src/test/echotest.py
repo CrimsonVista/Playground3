@@ -172,7 +172,7 @@ if __name__=="__main__":
     EnablePresetLogging(PRESET_DEBUG)
     
     if mode.lower() == "server":
-        coro = playground.getConnector(stack).create_playground_server(lambda: EchoServerProtocol(), 101)
+        coro = playground.create_server(lambda: EchoServerProtocol(), port=101, family=stack)
         server = loop.run_until_complete(coro)
         print("Echo Server Started at {}".format(server.sockets[0].gethostname()))
         loop.run_forever()
@@ -182,7 +182,10 @@ if __name__=="__main__":
     else:
         remoteAddress = mode
         control = EchoControl()
-        coro = playground.getConnector(stack).create_playground_connection(control.buildProtocol, remoteAddress, 101)
+        coro = playground.create_connection(control.buildProtocol, 
+            host=remoteAddress, 
+            port=101,
+            family=stack)
         transport, protocol = loop.run_until_complete(coro)
         print("Echo Client Connected. Starting UI t:{}. p:{}".format(transport, protocol))
         control.connect(protocol)
