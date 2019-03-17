@@ -6,8 +6,7 @@ Created on Feb 16, 2016
 
 import os, threading, sys, textwrap, traceback, shlex, time
 import asyncio
-# TODO: it would be nice to get rid of this some day
-from .AsyncIODeferred import Deferred
+
 from playground.network.common.Protocol import StackingProtocol
 
 class AdvancedStdio(object):
@@ -89,10 +88,9 @@ class AdvancedStdio(object):
 
     def __protocolProcessLine(self, line):
         try:
-            result, d = self.__protocol.line_received(line)
-            if d:
-                d.addCallback(lambda res: self.getNextInput())
-                d.addErrback(lambda res: self.getNextInput())
+            result, fut = self.__protocol.line_received(line)
+            if fut:
+                fut.add_done_callback(lambda res: self.getNextInput())
             else:
                 self.getNextInput()
         except:
@@ -529,42 +527,31 @@ class CLIShell(LineReceiver, CompleterInterface):
                 continue
             for cmdUsageString in cmdObj.usageHelp():
                 writer("  "+cmdUsageString+"\n")
-
-    def __runBatchLines(self, writer, batchLines, batchDeferred):
-        while batchLines:
-            line = batchLines.pop(0)
-            writer("[Batch] > %s\n" % line)
-            result, d = self.line_received(line)
-            debugPrint(result, d)
+        
+    async def __run_batch_lines(writer, batchLines):
+        for line in batchLines:
+            result, fut = self.line_received(line)
             if not result:
-                writer("  Batch failed\n")
-                # even though this failed, we have a successful callback
-                # to the I/O system
-                batchDeferred.callback(True)
-                return
-            if d:
-                writer("  Batch cmd returned a deferred. Waiting to execute next line\n")
-                d.addCallback(lambda res: self.__runBatchLines(writer, batchLines, batchDeferred))
-                d.addErrback(lambda res: self.__runBatchLines(writer, batchLines, batchDeferred))
-                # we need to wait. So return the batch deferred for the
-                # i/o system to wait on.
-                return batchDeferred
-        writer("Batch Complete\n")
-        batchDeferred.callback(True)
-        # all done. No batch deferred required (return none)
+                writer("  Batch failed on line: {}\n".format(line))
+                # even though the command failed, the batch succeeds
+                return True
+            try:
+                await fut # wait for one command to complete before doing the next
+            except Exception as e:
+                writer("  Batch failed on line: {}\n".format(line))
+                writer("  {}".format(e))
+                # even though the command failed, the batch succeeds
+                return True
+        return True
 
     def __batch(self, writer, batchFile):
         if not os.path.exists(batchFile):
             writer("No such file %s\n" % batchFile)
             return
-        d = Deferred()
         with open(batchFile) as f:
             batchLines = f.readlines()
-            d = self.__runBatchLines(writer, batchLines, d)
-        # d is either the same d as above, or None
-        # if it's d, the I/O system will wait until batch is complete
-        # otherwise, will return immediately
-        return d
+            return asyncio.ensure_future(self.__run_batch_lines(batchLines))
+        return None
 
     def quit(self, writer, *args):
         self.transport.lose_connection()
