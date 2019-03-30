@@ -183,6 +183,10 @@ class PlaygroundServer:
         logger.debug("Closing {} connections for server with id {}".format(len(connections), self._connectionId))
         for conn in connections:
             if conn.transport: conn.transport.close()
+
+    async def wait_closed(self):
+        # todo. make this async.
+        self.close()
         
     def __getattribute__(self, attr):
         if attr == "sockets":
