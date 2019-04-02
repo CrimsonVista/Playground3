@@ -12,7 +12,11 @@ class TestLoopEx(TestLoop):
         while self._running:
             when = yield
             if self._running: yield 0
-            
+
+    def _run_once(self):
+        if self._running:
+            super()._run_once()
+
     def close(self):
         self._running=False
         self._run_once()
