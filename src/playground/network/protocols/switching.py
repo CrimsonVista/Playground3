@@ -9,7 +9,9 @@ from .packets.switching_packets import AnnounceLinkPacket, WirePacket, FramedPac
 from playground.common import Timer, Minutes, Seconds
 
 from asyncio import Protocol
-import io
+import io, logging
+
+logger = logging.getLogger(__name__)
 
 class PlaygroundSwitchRxProtocol(Protocol):
     def __init__(self, switch):
@@ -29,6 +31,12 @@ class PlaygroundSwitchRxProtocol(Protocol):
         self.transport = transport
         
     def data_received(self, buf):
+        try:
+            self._data_received(buf)
+        except Exception as e:
+            logger.debug("{} could not process data because {}".format(self, e))
+            
+    def _data_received(self, buf):
         self._deserializer.update(buf)
         for packet in self._deserializer.nextPackets():
             if isinstance(packet, AnnounceLinkPacket):
@@ -125,8 +133,14 @@ class PlaygroundSwitchTxProtocol(Protocol):
             
             # transmit packet
             self.transport.write(wirePacket.__serialize__())
-        
+
     def data_received(self, data):
+        try:
+            self._data_received(data)
+        except Exception as e:
+            logger.debug("{} could not process data because {}".format(self, e))
+    
+    def _data_received(self, data):
         self._deserializer.update(data)
         demuxData = None
         for wirePacket in self._deserializer.nextPackets():

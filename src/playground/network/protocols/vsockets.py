@@ -50,6 +50,7 @@ class SocketControl:
             portKeys = self._spawnedConnectionKeys
             self._spawnedConnectionKeys = set([])
             for portKey in portKeys:
+                logger.debug("Closing {} asking device to close connection to {}".format(self, portKey))
                 self.device().closeConnection(portKey)
             (self._port != None) and self.device().closePort(self._port)
         
@@ -58,6 +59,7 @@ class SocketControl:
         Only close a single spawned connection. However, if this is
         an outbound socket, will close everything.
         """
+        logger.debug("{} ({}) closing port key {}".format(self, self._type, portKey))
         if self._type == self.SOCKET_TYPE_CONNECT:
             # outbound connections only have one connection per socket
             self.close()
@@ -387,7 +389,7 @@ class VNICCallbackProtocol(StackingProtocol):
             self.higherProtocol().data_received(self._backlog.pop(0))
 
     def connection_lost(self, reason=None):
-        logger.debug("low level connection_lost for callback port {}".format(self._spawnPort))
+        logger.debug("low level connection_lost for callback port {}, reason={}".format(self._spawnPort, reason))
         super().connection_lost(reason)
         #self.higherProtocol().transport.close()
         self.higherProtocol().connection_lost(reason)
@@ -400,7 +402,10 @@ class VNICCallbackProtocol(StackingProtocol):
         if self._higherConnectionMade:
             logger.debug("Pushing data to application, data received on {}".format(self._spawnPort)) 
             if self.higherProtocol():
-                self.higherProtocol().data_received(buf)
+                try:
+                    self.higherProtocol().data_received(buf)
+                except Exception as e:
+                    logger.debug("Could not push data to application because {}.".format(e))
         else:
             self._backlog.append(buf)
             
