@@ -185,7 +185,9 @@ class PacketType(NamedPacketType, metaclass=PacketDefinitionLoader):
                 """
                 exhausted = False
                 while not exhausted:
+                    prefix = self._stream.peek(8) # to see if there was progress
                     try:
+                        logger.debug("{} Deserialize stream at position {}/{}".format(self, self._stream.tell(), self._stream.available()))
                         notReady = next(self._iterator)
                         # No more messages until more data. We're done.
                         exhausted = True
@@ -204,6 +206,9 @@ class PacketType(NamedPacketType, metaclass=PacketDefinitionLoader):
                         yield result.value
                     except Exception as error:
                         #raise error
+                        if self._stream.peek(8) == prefix:
+                            # there was no progress. Don't try to deserialize same bytes
+                            self._stream.read(1)
                         self._iterator = cls.DeserializeStream(self._stream)
                         logger.debug("{} deserialization error {}.".format(cls, error))
                         if self._errHandler: self._errhandler.handleException(error)
