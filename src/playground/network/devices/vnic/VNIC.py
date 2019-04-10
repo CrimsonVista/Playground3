@@ -182,11 +182,14 @@ class VNIC:
         return requestedPort
         
     def closeConnection(self, portKey):
+        logger.debug("{} asked to close {}".format(self, portKey))
         if portKey in self._connections:
+            logger.debug("{} found connection {}".format(self, portKey))
             connData = self._connections[portKey]
             del self._connections[portKey]
             
             connData.close()
+            logger.debug("{} closed {} ".format(self, connData))
             
     def closePort(self, port):
         if port in self._ports:

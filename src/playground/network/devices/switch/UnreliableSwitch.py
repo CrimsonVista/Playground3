@@ -8,7 +8,9 @@ Original File Created on Aug 20, 2013
 
 from playground.network.common import StackingTransport
 from .Switch import Switch
-import random, asyncio
+import random, asyncio, logging
+
+logger = logging.getLogger(__name__)
 
 class ConstantErrorTransport(StackingTransport):
     """
@@ -65,10 +67,15 @@ class DelayTransport(StackingTransport):
     
     def write(self, data):
         if random.random() < self.Rate:
-            asyncio.get_event_loop().call_later(self.Delay, self.lowerTransport().write, data)
+            asyncio.get_event_loop().call_later(self.Delay, self.raw_write, data)
         else:
+            self.raw_write(data)
+            
+    def raw_write(self, data):
+        try:
             self.lowerTransport().write(data)
-        
+        except Exception as e:
+            logger.info("Could not write data lower because {}".format(e))
         
 class UnreliableSwitch(Switch):      
     def setErrorRate(self, rate, horizon):
