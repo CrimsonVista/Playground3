@@ -20,6 +20,13 @@ DECODE_WAITING_FOR_STREAM = PacketEncoderBase.DECODE_WAITING_FOR_STREAM
 UNICODE_ENCODING = "utf-8" # used for converting strings to bytes and back.
 
 class EncoderStreamAdapter(AbstractStreamAdapter):
+
+    def __init__(self, stream, max_size=None):
+        super().__init__(stream)
+        self._max_size = max_size
+        
+    def set_max_size(self, max_size):
+        self._max_size = max_size
         
     def pack(self, packCode, *args):
         return self._stream.write(struct.pack(packCode, *args))
@@ -31,6 +38,8 @@ class EncoderStreamAdapter(AbstractStreamAdapter):
         
     def unpackIterator(self, packCode):
         unpackSize = struct.calcsize(packCode)
+        if self._max_size and unpackSize > self._max_size:
+            raise Exception("Invalid packet. Unpack size of {} exceeds limit of {}".format(unpackSize, self._max_size))
         while self.available() < unpackSize:
             yield DECODE_WAITING_FOR_STREAM
         unpackChunk = self.read(unpackSize)
@@ -319,7 +328,7 @@ PlaygroundStandardPacketEncoder.RegisterTypeEncoder(ListFieldType(PacketFieldTyp
     
         
 class PacketEncoder:
-    PacketIdentifierTemplate = "!QB{}sB{}s" # packet length, definition, version
+    PacketIdentifierTemplate = "!QQB{}sB{}s" # packet length, length checksum, definition, version, 
                                             # Definition and version are length-prefixed strings
                                            
     def encode(self, stream, complexType, topEncoder):
@@ -331,7 +340,7 @@ class PacketEncoder:
         packCode = self.PacketIdentifierTemplate.format(len(packetDefEncoded), len(packetVerEncoded))
         
         # start by putting in a 0 for the packet length
-        stream.pack(packCode, 0, len(packetDefEncoded), packetDefEncoded, 
+        stream.pack(packCode, 0, 0, len(packetDefEncoded), packetDefEncoded, 
                               len(packetVerEncoded), packetVerEncoded) 
                               
         PacketFieldsEncoder().encode(stream, complexType, topEncoder)
@@ -342,12 +351,21 @@ class PacketEncoder:
         stream.seek(packetStartPosition)
         # now write in the real value
         stream.pack("!Q", packetLength)
+        # this isn't a real checksum. But probably good enough for most errors.
+        stream.pack("!Q", packetLength^0xFFFFFFFFFFFFFFFF) 
         stream.seek(packetEndPosition)
         
     def decodeIterator(self, stream, complexType, topEncoder):
         packetStartPosition = stream.tell()
         
         packetLength = yield from stream.unpackIterator("!Q")
+        packetLengthCompare = yield from stream.unpackIterator("!Q")
+        packetLengthCompare ^= 0xFFFFFFFFFFFFFFFF
+        
+        if packetLength != packetLengthCompare:
+            raise Exception("Packet Length Mismatch {}!={}".format(packetLength, packetLengthCompare))
+            
+        stream.set_max_size(packetLength)
         
         nameLen = yield from stream.unpackIterator("!B")
         name    = yield from stream.unpackIterator("!{}s".format(nameLen))
