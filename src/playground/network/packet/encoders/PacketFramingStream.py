@@ -51,8 +51,8 @@ class PacketFramingStreamAdapter(AbstractStreamAdapter):
     def _fail(self, errMsg):
         if self._startChecked:
             self.seek(self._dataSize)
-        while self._rawAvailable() > self.PREFIX_SIZE and self._stream.peek(4) != self.MAGIC:
-            self._stream.read(1)
+        while self._rawAvailable() >= len(self.MAGIC) and self._stream.peek(4) != self.MAGIC:
+            self._stream.read(len(self.MAGIC))
         raise Exception(errMsg)
     
     def _rawStreamSize(self):
@@ -186,8 +186,10 @@ class PacketFramingStreamAdapter(AbstractStreamAdapter):
         readStart = self._stream.tell()
         
         if readStart < readMinIndex or readStart > readMaxIndex:
+            raise Exception("We tried to read at {} (range is {}/{})".format(readStart, readMinIndex, readMaxIndex))
             return b""
         if count > self.available():
+            if count == 1: raise Exception("Tried to read 1 byte but can't because not enough size?")
             count = self.available()
         return self._stream.read(count)
         
