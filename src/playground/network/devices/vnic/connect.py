@@ -447,7 +447,7 @@ class PlaygroundConnectorService:
             try:
                 pathName = os.path.join(connectorsLocation, pathName)
                 moduleName = os.path.basename(pathName)
-                if os.path.exists(os.path.join(pathName, "__init__.py")):
+                if os.path.exists(os.path.join(pathName, "__init__.py")) or os.path.exists(os.path.join(pathName, "__init__.pyc")):
                     dottedName = "connectors.{}".format(moduleName)
                     with PacketDefinitionSilo():
                         if dottedName in sys.modules:
