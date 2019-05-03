@@ -52,7 +52,7 @@ class PacketFramingStreamAdapter(AbstractStreamAdapter):
         if self._startChecked:
             self.seek(self._dataSize)
         while self._rawAvailable() >= len(self.MAGIC) and self._stream.peek(4) != self.MAGIC:
-            self._stream.read(len(self.MAGIC))
+            self._stream.read(1)
         raise Exception(errMsg)
     
     def _rawStreamSize(self):
