@@ -15,6 +15,9 @@ from .PacketEncoderBase import PacketEncoderBase
 from .PacketEncodingError import PacketEncodingError
 from .AbstractStreamAdapter import AbstractStreamAdapter
 
+import logging
+logger = logging.getLogger(__name__)
+
 DECODE_WAITING_FOR_STREAM = PacketEncoderBase.DECODE_WAITING_FOR_STREAM
 
 UNICODE_ENCODING = "utf-8" # used for converting strings to bytes and back.
@@ -356,14 +359,28 @@ class PacketEncoder:
         stream.seek(packetEndPosition)
         
     def decodeIterator(self, stream, complexType, topEncoder):
+        packetLengthFound = False
+        resync = False
         packetStartPosition = stream.tell()
         
-        packetLength = yield from stream.unpackIterator("!Q")
-        packetLengthCompare = yield from stream.unpackIterator("!Q")
-        packetLengthCompare ^= 0xFFFFFFFFFFFFFFFF
+        while not packetLengthFound:
         
-        if packetLength != packetLengthCompare:
-            raise Exception("Packet Length Mismatch {}!={}".format(packetLength, packetLengthCompare))
+            packetLength = yield from stream.unpackIterator("!Q")
+            packetLengthCompare = yield from stream.unpackIterator("!Q")
+            packetLengthCompare ^= 0xFFFFFFFFFFFFFFFF
+            
+            if packetLength != packetLengthCompare:
+                if not resync:
+                    logger.debug("Packet Length Mismatch {}!={} at stream pos {}. Advancing to resync".format(packetLength, packetLengthCompare, packetStartPosition))
+                    resync = True
+                packetStartPosition += 1
+                stream.seek(packetStartPosition)
+                #raise Exception("Packet Length Mismatch {}!={}".format(packetLength, packetLengthCompare))
+            else:
+                if resync:
+                    logger.debug("Packet deserialization recovered at iterator position {}".format(packetStartPosition))
+                    resync = False
+                packetLengthFound = True
             
         stream.set_max_size(packetLength)
         
