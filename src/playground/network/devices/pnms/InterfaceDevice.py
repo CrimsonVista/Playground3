@@ -34,6 +34,19 @@ cls.REGISTER_DEVICE_TYPE_NAME + """ connect <switch_name>
         connectedTo = self._pnms.getDevice(connectedTo)
         if connectedTo != None and connectedTo not in self._deviceDependencies:
             self._deviceDependencies.add(connectedTo)
+        else:
+            print("Warning. Ignoring unknown connectedto device {}".format(connectedTo))
+            self._disconnect()
+    
+    # Overwrite to enforce that connectedTo is always a dependency    
+    def dependenciesEnabled(self):
+        connectedTo = self.connectedTo()
+        if connectedTo == None: return False
+
+        connectedTo = self._pnms.getDevice(connectedTo)
+        if connectedTo != None: return False
+        
+        return self.dependenciesEnabled()
 
     def initialize(self, args):
         auto = self.CONFIG_TRUE

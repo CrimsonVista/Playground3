@@ -1,9 +1,9 @@
 
-from playground import Configure
+from playground import Configure, PlaygroundConfigFile
 from playground.network.common import PlaygroundAddressBlock
 from playground.common.datastructures import DelegateAdapter
 
-import configparser, os, sys, time, signal
+import os, sys, time, signal
 
 """
 Every device can only write to their section.
@@ -192,19 +192,6 @@ class NetworkManager:
     }
     
     REGISTERED_DEVICE_TYPES = {}
-    
-    @classmethod
-    def InitializeConfigModule(cls, location, overwrite=False):
-        """
-        This function can be used to initialize a playground network
-        management config file (empty).
-        """
-        configFile = os.path.join(location, cls.CONFIG_FILE) 
-        if os.path.exists(configFile) and overwrite:
-            os.unlink(configFile)
-        if not os.path.exists(configFile):
-            with open(configFile, "w+") as f:
-                f.write("# Config File for Playground Networking\n") 
                 
     class ReadOnlyView:
         def __init__(self, pnms, device):
@@ -220,25 +207,23 @@ class NetworkManager:
         self._devices = {}
         self._enabled = False
         self._lastModifiedTime = None
-        self._configFilePath = None
-        self._configLocation = None
+        self._config = None
         
-    def loadConfiguration(self, configLocation=None, configFilePath=None):
-        self._configFilePath = configFilePath
-        self._configLocation = configLocation
+    def location(self):
+        if self._config is None:
+            return None
+        return self._config.path()
+        
+    def loadConfiguration(self):
         self._loadConfig(forced=True)
         self._loadDevices()
     
     def saveConfiguration(self):
-        with open(self._configFilePath, "w+") as configWriter:
-            self._config.write(configWriter)
+        self._config.save()
         
     def reloadConfiguration(self, forced=False):
         self._loadConfig(forced=forced)
         self._loadDevices()
-        
-    def location(self):
-        return self._configLocation
         
     def postAlert(self, device, alertType, args):
         for deviceName in self._devices:
@@ -262,8 +247,13 @@ class NetworkManager:
                 self._devices[deviceName].disable()
         
     def getDevice(self, deviceName, readOnly=False):
+        if not deviceName:
+            raise Exception("Cannot 'get' empty device.")
         if deviceName in self._devices:
             return self._devices[deviceName]
+        if deviceName not in self._config[self.DEVICES_SECTION_NAME]:
+            # warning?
+            return None
         deviceType = self._config[self.DEVICES_SECTION_NAME][deviceName]
         if deviceType not in self.REGISTERED_DEVICE_TYPES:
             # TODO: Do we really want this to be an exception?
@@ -317,7 +307,7 @@ class NetworkManager:
     def _getRawSectionAdapter(self, sectionName, readOnly=False):
         if sectionName not in self._config:
             raise Exception("No such section {}".format(sectionName))
-            
+        
         if readOnly:
             save = None
         else:
@@ -349,40 +339,17 @@ class NetworkManager:
         devicesView,_ = self.getSectionAPI(self.DEVICES_SECTION_NAME)
         return devicesView
         
-    def _findConfig(self):
-        path = Configure.CurrentPath()
-        filepath = os.path.join(path, self.CONFIG_FILE)
-        if os.path.exists(filepath):
-            return path, filepath
-        return None, None
-        
     def _loadConfig(self, forced=False):
-        if self._configFilePath != None:
-            # we already have it set.
-            if not os.path.exists(self._configFilePath):
-                raise Exception("Cannot find specified config file {}".format(self._configFilePath))
-            self._configLocation = os.path.dirname(self._configFilePath)
-        elif self._configLocation != None:
-            # have an  explicit location:
-            filepath = os.path.join(self._configLocation, self.CONFIG_FILE)
-            if not os.path.exists(filepath):
-                raise Exception("Cannot find {} in specified config location {}".format(self.CONFIG_FILE, self._configLocation))
-            self._configFilePath = filepath
+        if self._config:
+            self._config.reload(forced)
         else:
-            self._configLocation, self._configFilePath = self._findConfig()
-            
-        if not self._configFilePath:
-            raise Exception("{} not found in search paths".format(self.CONFIG_FILE))
-            
-        newLastModifiedTime = os.path.getmtime(self._configFilePath)
-        if forced or newLastModifiedTime != self._lastModifiedTime:
-            self._lastModifiedTime = newLastModifiedTime
-            
-            self._config = configparser.ConfigParser()
-            self._config.read(self._configFilePath)
+            config_spec = {}
             for sec in self.SECTION_API:
-                if not sec in self._config:
-                    self._config[sec] = {}
+                config_spec[sec] = {}
+            self._config = PlaygroundConfigFile.Open("networking", 
+                access="write",
+                create="ifneeded",
+                **config_spec)
                             
     def _getDeviceConfigSectionName(self, deviceName):
         return "Config_{}".format(deviceName)

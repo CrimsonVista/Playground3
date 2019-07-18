@@ -10,7 +10,7 @@ STARTUP_DIR = os.getcwd()
 # 2.
 # Import  the Configure module. This is step 2, because it needs
 # to be available to all other modules being imported.
-from playground.common.Configure import Configure
+from playground.common.Configure import Configure, PlaygroundConfigFile
 
 # 3.
 # Set up logging. May require Configure
@@ -23,8 +23,6 @@ logging_control.EnablePresetLogging(logging_control.PRESET_NONE)
 # Define all other modules that need to use the configure
 # directory and configure on startup. Done after logging is
 # set up
-from playground.network.devices.pnms import NetworkManager
-Configure.CONFIG_MODULES.append(NetworkManager)
 
 # 5.
 # Configure connectors

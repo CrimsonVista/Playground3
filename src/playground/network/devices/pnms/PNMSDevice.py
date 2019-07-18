@@ -186,6 +186,8 @@ class PNMSDevice(metaclass=PNMSDeviceLoader):
                         newStatus = self.STATUS_ENABLED
                     else:
                         newStatus = self.STATUS_ABNORMAL_SHUTDOWN
+                else:
+                    newStatus = self.STATUS_WAITING_FOR_DEPENDENCIES
             else: 
                 newStatus = self.STATUS_DISABLED
         elif self._enableStatus == self.STATUS_WAITING_FOR_DEPENDENCIES:

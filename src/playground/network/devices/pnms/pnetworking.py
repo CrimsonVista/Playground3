@@ -24,8 +24,8 @@ class PnetworkingInterface:
 Command 'initialize' creates a playground infrastructure
 that includes a config file and various necessary subdirectories
 underneath a .playground directory. This .playground dir can be
-placed in a global location for all users (with appropriate
-permissions), a local location for the current user, or an instance
+placed in a system location for all users (with appropriate
+permissions), a user location for the current user, or an instance
 location, in a directory specified by PLAYGROUND_INSTANCE. The optional overwrite
 argument, when set to true, will re-initialize the location erasing
 the existing configuration.""").format(
@@ -130,13 +130,16 @@ there will be no answer.""").format(
         self._fail = failFunction
         try:
             self._currentPath = Configure.CurrentPath()
+        except Exception as e:
+            self._fail("Could not load the location of the playground config. {}".format(e))
+            return
+            
+        try:
             self._manager = NetworkManager()
             self._manager.loadConfiguration()
         except Exception as e:
-            print(e)
-            print("no path")
-            self._currentPath = None
-            self._manager = None
+            self._fail("Could not load the network manager. {}".format(e))
+            return
         self.init_argument_handler()
         self._subcmd_help = self.initialize_subcommand_help()
         
@@ -149,6 +152,18 @@ there will be no answer.""").format(
         if not device: 
             self._fail("Unknown device {}".format(deviceName))
         return device
+        
+    def enable_device(self, deviceName):
+        device = self.initialize_device(deviceName)
+        device.enable()
+        if device.enabled() == device.STATUS_ENABLED:
+            self._write("{} enabled.".format(deviceName))
+        elif device.enabled() == device.STATUS_ABNORMAL_SHUTDOWN:
+            self._error("{} failed abnormally.".format(deviceName))
+        elif device.enabled() == device.STATUS_WAITING_FOR_DEPENDENCIES:
+            self._error("{} could not launch because of unmet dependencies.".format(deviceName))
+        else:
+            self._error("{} could not launch.".format(deviceName))
     
     def status_handler(self, args):
         if not self._currentPath:
@@ -205,7 +220,7 @@ commands:
         )
         
         initialize_parser = commands.add_parser("initialize", add_help=False, formatter_class=sub_formatter)
-        initialize_parser.add_argument("location",choices=['instance','local','global'])
+        initialize_parser.add_argument("location",choices=['instance','user','system'])
         initialize_parser.add_argument("overwrite",nargs="?",default=False)
         initialize_parser.set_defaults(
             func=lambda args: Configure.Initialize(args.location.upper(), overwrite=args.overwrite)
@@ -238,7 +253,7 @@ commands:
         enable_parser = commands.add_parser('enable', add_help=False, formatter_class=sub_formatter)
         enable_parser.add_argument("device",type=str)
         enable_parser.set_defaults(
-            func=lambda args: self.initialize_device(args.device).enable()
+            func=lambda args: self.enable_device(args.device)
         )
         
         disable_parser = commands.add_parser('disable', add_help=False, formatter_class=sub_formatter)
