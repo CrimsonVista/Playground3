@@ -5,7 +5,7 @@ import argparse
 import daemon
 from daemon import pidlockfile as pidfile
 
-def runSwitch(unreliable, host, port, statusfile):
+def runSwitch(switch_type, host, port, statusfile):
     # Don't import anything playground or asyncio related until after the fork.
     from playground.network.devices import Switch, UnreliableSwitch
     from playground.network.protocols.spmp import SPMPServerProtocol, FramedProtocolAdapter
@@ -15,7 +15,7 @@ def runSwitch(unreliable, host, port, statusfile):
     EnablePresetLogging(PRESET_DEBUG)
     logging.getLogger("playground").debug("start")
     
-    if unreliable:
+    if switch_type == "unreliable":
         BaseSwitch = UnreliableSwitch
     else:
         BaseSwitch = Switch
