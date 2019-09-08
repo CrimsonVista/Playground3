@@ -142,9 +142,10 @@ class PNMSDevice(metaclass=PNMSDeviceLoader):
         return None
         
     def _getDeviceRunFiles(self):
-        statusFile = os.path.join(self._pnms.location(), "device_{}.status".format(self.name()))
-        pidFile = os.path.join(self._pnms.location(), "device_{}.pid".format(self.name()))
-        lockFile = os.path.join(self._pnms.location(), "device_{}.pid.lock".format(self.name()))
+        pnms_path = os.path.dirname(self._pnms.location())
+        statusFile = os.path.join(pnms_path, "device_{}.status".format(self.name()))
+        pidFile = os.path.join(pnms_path, "device_{}.pid".format(self.name()))
+        lockFile = os.path.join(pnms_path, "device_{}.pid.lock".format(self.name()))
         
         return statusFile, pidFile, lockFile
         
@@ -187,6 +188,7 @@ class PNMSDevice(metaclass=PNMSDeviceLoader):
                     else:
                         newStatus = self.STATUS_ABNORMAL_SHUTDOWN
                 else:
+                    print("Not enabled")
                     newStatus = self.STATUS_WAITING_FOR_DEPENDENCIES
             else: 
                 newStatus = self.STATUS_DISABLED

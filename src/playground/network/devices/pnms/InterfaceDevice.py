@@ -44,9 +44,9 @@ cls.REGISTER_DEVICE_TYPE_NAME + """ connect <switch_name>
         if connectedTo == None: return False
 
         connectedTo = self._pnms.getDevice(connectedTo)
-        if connectedTo != None: return False
+        if connectedTo == None: return False
         
-        return self.dependenciesEnabled()
+        return super().dependenciesEnabled()
 
     def initialize(self, args):
         auto = self.CONFIG_TRUE

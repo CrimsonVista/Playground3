@@ -148,3 +148,6 @@ class PlaygroundConfigFile:
         
     def __contains__(self, key):
         return self._config.__contains__(key)
+        
+    def __delitem__(self, key):
+        del self._config[key]

@@ -1,7 +1,7 @@
 import subprocess
 
 def getCmdOutput(*args):
-    output = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    output = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     return output.stdout
 
 def isPidAlive(pid):

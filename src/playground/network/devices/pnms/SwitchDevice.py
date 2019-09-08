@@ -10,7 +10,7 @@ class SwitchDevice(NetworkAccessPointDevice):
         cmdArgs = [self.LAUNCH_SCRIPT, "--pidfile", pidFile, "--statusfile", statusFile, "--port", port]
         return cmdArgs + list(extras)
             
-    def _launch(self, timeout=30):
+    def _launch(self, timeout=5):
         if not self.dependenciesEnabled():
             return
         if self.isRemote():
@@ -28,10 +28,11 @@ class SwitchDevice(NetworkAccessPointDevice):
         if self.isLocal():
             cmdArgs.append("--private")
         
-        getCmdOutput(*cmdArgs)
+        output = getCmdOutput(*cmdArgs)
         
         running = self._waitUntilRunning(timeout=timeout)
         if not running:
+            if output: print(output)
             self._shutdown()
         else:
             self._pnms.postAlert(self.enable, True)
