@@ -128,20 +128,18 @@ there will be no answer.""").format(
         self._write = stdoutFunction
         self._error = stderrFunction
         self._fail = failFunction
-        try:
-            self._currentPath = Configure.CurrentPath()
-        except Exception as e:
-            self._fail("Could not load the location of the playground config. {}".format(e))
-            return
-            
+        self._currentPath = None
+        self._manager = None
+        self.init_argument_handler()
+        self._subcmd_help = self.initialize_subcommand_help()
+        
+    def _loadNetworkManager(self):
         try:
             self._manager = NetworkManager()
             self._manager.loadConfiguration()
         except Exception as e:
             self._fail("Could not load the network manager. {}".format(e))
             return
-        self.init_argument_handler()
-        self._subcmd_help = self.initialize_subcommand_help()
         
     def fail(self, msg, errorCode=-1):
         self._error("Error: {}".format(msg))
@@ -206,9 +204,12 @@ commands:
         
     def init_argument_handler(self):
         self._topargs = argparse.ArgumentParser(add_help=False)
+        self._preinit_functions = []
         self._topargs.set_defaults(
             func=self.help_handler
         )
+        self._preinit_functions.append(self.help_handler)
+        
         commands = self._topargs.add_subparsers(dest="subcommand")
         self._commands = commands
         sub_formatter = SimplifiedUsageFormatter
@@ -222,9 +223,11 @@ commands:
         initialize_parser = commands.add_parser("initialize", add_help=False, formatter_class=sub_formatter)
         initialize_parser.add_argument("location",choices=['instance','user','system'])
         initialize_parser.add_argument("overwrite",nargs="?",default=False)
+        initialize_function = lambda args: Configure.Initialize(args.location.upper(), overwrite=args.overwrite)
         initialize_parser.set_defaults(
-            func=lambda args: Configure.Initialize(args.location.upper(), overwrite=args.overwrite)
+            func = initialize_function
         )
+        self._preinit_functions.append(initialize_function)
         
         on_parser = commands.add_parser("on", add_help=False, formatter_class=sub_formatter)
         on_parser.set_defaults(
@@ -289,11 +292,19 @@ commands:
         status_parser = commands.add_parser('status', add_help=False, formatter_class=sub_formatter)
         status_parser.add_argument('device',nargs='?', default=None)
         status_parser.set_defaults(func=self.status_handler)
+        self._preinit_functions.append(self.status_handler)
         
         
         
     def execute(self, args):
+        self._currentPath = Configure.CurrentPath()
+            
         args = self._topargs.parse_args(args)
+        if not self._currentPath and args.func not in self._preinit_functions:
+            return self._fail("Pnetworking cannot find playground path. Try 'pnetworking help'")
+        if self._currentPath:
+            self._loadNetworkManager()
+            
         try:
             args.func(args)
         except Exception as e:

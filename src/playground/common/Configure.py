@@ -48,7 +48,7 @@ class Configure:
             searchLocation = cls.ConfigPath(searchKey)
             if searchLocation and os.path.exists(searchLocation):
                 return searchLocation
-        raise Exception("No configure path found.")
+        return None
     
     @classmethod
     def Initialize(cls, pathId, overwrite=False):
@@ -71,6 +71,8 @@ class PlaygroundConfigFile:
     def Exists(cls, identifier, location=None):
         if location==None:
             location = Configure.CurrentPath()
+        if location==None:
+            return False
         path_parts = [location] + identifier.split(".")
         path = os.path.join(*path_parts)+".ini"
         return os.path.exists(path)
@@ -83,10 +85,13 @@ class PlaygroundConfigFile:
             raise Exception("Unknown creation mode {}".format(create))
         if location==None:
             location = Configure.CurrentPath()
+        if location==None:
+            raise Exception("No Playground path found")
+            
         path_parts = [location] + identifier.split(".")
         path = os.path.join(*path_parts)+".ini"
         if (not os.path.exists(path) and create=="ifneeded") or create == "overwrite":
-            os.mkdirs(os.path.dirname(path))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path,"w+") as f:
                 f.write("# Playground Config {} Created {}\n\n".format(
                     identifier,
