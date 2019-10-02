@@ -98,7 +98,7 @@ def main():
             pidfile=pidfile.TimeoutPIDLockFile(pidFileName),
             ) as context:
             
-            runSwitch(args.unreliable, host, args.port, statusFileName)
+            runSwitch(switch_type, host, args.port, statusFileName)
 
 if __name__=="__main__":
     main()
