@@ -515,3 +515,6 @@ def create_connection(protocol_factory, host, port, family=None, *args, **kargs)
     elif family == None:
         family = "default"
     return playground.getConnector(family).create_playground_connection(protocol_factory, host, port)
+    
+def raw_vnic_connection(self, protocolFactory, vnicName=default):
+    return playground.getConnector("default").raw_vnic_connection(protocolFactory, vnicName)
