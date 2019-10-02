@@ -356,9 +356,9 @@ class PlaygroundConnector:
         server = PlaygroundServer(connectionId, address, port, self._callbackService.getConnections, controlProtocol.close)
         return server
         
-    async def raw_vnic_connection(self, protocolFactory, vnicName=default):
+    async def raw_vnic_connection(self, protocolFactory, vnicName="default"):
         # find the address to host on.
-        if host == "default" or host == "localhost":
+        if vnicName="default":
             vnic = self._vnicService.getDefaultVnic()
         else:
             vnic = self._vnicService.getVnicByLocalAddress(host) 
@@ -516,5 +516,5 @@ def create_connection(protocol_factory, host, port, family=None, *args, **kargs)
         family = "default"
     return playground.getConnector(family).create_playground_connection(protocol_factory, host, port)
     
-def raw_vnic_connection(self, protocolFactory, vnicName=default):
+def raw_vnic_connection(self, protocolFactory, vnicName="default"):
     return playground.getConnector("default").raw_vnic_connection(protocolFactory, vnicName)
