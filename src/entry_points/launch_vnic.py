@@ -51,8 +51,8 @@ def runVnic(vnic_address, port, statusfile, switch_address, switch_port, daemon)
             self._presetLogging = PRESET_NONE
             self.SPMPApi =  {
                             "verbs"                :(lambda    : ", ".join(list(self.SPMPApi.keys()))),
-                            "get-promsicuity-level":(lambda    : str(self.promiscuousLevel())),
-                            "set-promiscutiy-level":(lambda lvl: self.setPromiscuousLevel(str(lvl))),
+                            "get-promiscuity-level":(lambda    : str(self.promiscuousLevel())),
+                            "set-promiscuity-level":(lambda lvl: self.setPromiscuousLevel(int(lvl))),
                             "all-log-levels"       :(lambda    : ", ".join(PRESET_LEVELS)),
                             "get-log-level"        :(lambda    : self._presetLogging),
                             "set-log-level"        :(lambda lvl: self.setLogLevel(lvl)),
