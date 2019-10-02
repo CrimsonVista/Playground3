@@ -77,6 +77,10 @@ class VNICStartDumpPacket(VNICSocketControlPacket):
     DEFINITION_IDENTIFIER = "vsockets.VNICStartDumpPacket"
     DEFINITION_VERSION    = "1.0"
     
+class VNICStopDumpPacket(VNICSocketControlPacket):
+    DEFINITION_IDENTIFIER = "vsockets.VNICStopDumpPacket"
+    DEFINITION_VERSION    = "1.0"
+    
 class VNICPromiscuousLevelPacket(VNICSocketControlPacket):
     """
     This packet is both a getter/setter packet that can be

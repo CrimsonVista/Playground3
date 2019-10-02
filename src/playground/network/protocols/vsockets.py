@@ -3,6 +3,7 @@ from playground.network.protocols.packets.vsocket_packets import VNICSocketOpenP
                                                                     VNICSocketOpenResponsePacket,   \
                                                                     VNICConnectionSpawnedPacket,    \
                                                                     VNICStartDumpPacket,            \
+                                                                    VNICStopDumpPacket,             \
                                                                     VNICSocketControlPacket,        \
                                                                     VNICSocketClosePacket,          \
                                                                     VNICPromiscuousLevelPacket,     \
@@ -144,6 +145,7 @@ class VNICSocketControlProtocol(Protocol):
         self._deserializer = PacketType.Deserializer()
         self._control = {}
         self.transport = None
+        self.dumping = False
         
     def controlLost(self, controlId):
         if controlId in self._control:
@@ -163,6 +165,9 @@ class VNICSocketControlProtocol(Protocol):
         
     def connection_lost(self, reason=None):
         logger.debug("VNIC connection_lost {} for reason {}".format(self, reason))
+        if self._dumping:
+            self._vnic.stopDump(self)
+            self._dumping = False
         for controlId in self._control:
             control = self._control[controlId]
             try:
@@ -181,6 +186,14 @@ class VNICSocketControlProtocol(Protocol):
             elif isinstance(controlPacket, VNICSocketClosePacket):
                 logger.info("{} received socket close {} operation".format(self._vnic, controlPacket.ConnectionId))
                 self.controlLost(controlPacket.ConnectionId)
+            elif isinstance(controlPacket, VNICStartDumpPacket) and not self._dumping:
+                logger.info("{} received start dump operation.".format(self._vnic))
+                self._dumping = True
+                self._vnic.startDump(self) 
+            elif isinstance(controlPacket, VNICStopDumpPacket) and self._dumping:
+                logger.info("{} received stop dump operation.".format(self._vnic))
+                self._dumping = False
+                self._vnic.stopDump(self) 
             elif isinstance(controlPacket, WirePacket):
                 logger.debug("{} received raw wire for dump mode connection.".format(self._vnic))
                 outboundKey = PortKey(controlPacket.source, controlPacket.sourcePort, 

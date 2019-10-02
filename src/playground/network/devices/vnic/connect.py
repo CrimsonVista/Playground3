@@ -355,6 +355,25 @@ class PlaygroundConnector:
         
         server = PlaygroundServer(connectionId, address, port, self._callbackService.getConnections, controlProtocol.close)
         return server
+        
+    async def raw_vnic_connection(self, protocolFactory, vnicName=default):
+        # find the address to host on.
+        if host == "default" or host == "localhost":
+            vnic = self._vnicService.getDefaultVnic()
+        else:
+            vnic = self._vnicService.getVnicByLocalAddress(host) 
+        if not vnic:
+            raise Exception("Could not find a valid VNIC.")
+            
+        address = self._vnicService.getVnicPlaygroundAddress(vnic)
+        location = self._vnicService.getVnicTcpLocation(vnic)
+        
+        if not location:
+            raise Exception("Could not find an active VNIC.")
+        
+        vnicAddr, vnicPort = location
+        
+        return await asyncio.get_event_loop().create_connection(protocolFactory, vnicAddr, vnicPort)
 
 
 class StandardVnicService:
