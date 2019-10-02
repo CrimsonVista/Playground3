@@ -42,7 +42,7 @@ def runSwitch(switch_type, host, port, statusfile):
                     self.SPMPApi.update( {
                                 "get-error-rate"        :(lambda    : "Errors per Bytes = {}".format(self.getErrorRate())),
                                 "set-error-rate"        :(lambda rate, horizon: self.setErrorRate(int(rate), int(horizon))),
-                                "get-delay-rate"        :(lambda    : "Every {} packets, delay {} second".format(self.getDelayRate())),
+                                "get-delay-rate"        :(lambda    : "Every {} packets, delay {} second".format(*self.getDelayRate())),
                                 "set-delay-rate"        :(lambda rate, delay: self.setDelayRate(int(rate), float(delay)))
                         })
                     

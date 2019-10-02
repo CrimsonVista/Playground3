@@ -528,7 +528,7 @@ class CLIShell(LineReceiver, CompleterInterface):
             for cmdUsageString in cmdObj.usageHelp():
                 writer("  "+cmdUsageString+"\n")
         
-    async def __run_batch_lines(writer, batchLines):
+    async def __run_batch_lines(self, writer, batchLines):
         for line in batchLines:
             result, fut = self.line_received(line)
             if not result:
@@ -550,7 +550,7 @@ class CLIShell(LineReceiver, CompleterInterface):
             return
         with open(batchFile) as f:
             batchLines = f.readlines()
-            return asyncio.ensure_future(self.__run_batch_lines(batchLines))
+            return asyncio.ensure_future(self.__run_batch_lines(writer, batchLines))
         return None
 
     def quit(self, writer, *args):
