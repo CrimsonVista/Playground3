@@ -145,7 +145,7 @@ class VNICSocketControlProtocol(Protocol):
         self._deserializer = PacketType.Deserializer()
         self._control = {}
         self.transport = None
-        self.dumping = False
+        self._dumping = False
         
     def controlLost(self, controlId):
         if controlId in self._control:
