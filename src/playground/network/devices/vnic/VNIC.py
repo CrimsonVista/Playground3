@@ -88,7 +88,7 @@ class VNIC:
         level = self._promiscuousMode
         listeningBlock = PlaygroundAddressBlock(*self._address.toParts())
         for i in range(level):
-            listeningBlock.getParentBlock()
+            listeningBlock = listeningBlock.getParentBlock()
         self._linkTx.changeRegisteredAddress(str(listeningBlock))
         
     def address(self):
