@@ -9,6 +9,9 @@ from .AbstractStreamAdapter import AbstractStreamAdapter
 import struct, zlib
 from io import SEEK_END, SEEK_CUR, SEEK_SET
 
+import logging
+logger = logging.getLogger("playground.packetfraemstreamadapter")
+
 class PacketFramingStreamAdapter(AbstractStreamAdapter):
     """
     This Stream reads and writes framed bytes. 
@@ -49,9 +52,12 @@ class PacketFramingStreamAdapter(AbstractStreamAdapter):
         self._checkStreamEnd()
         
     def _fail(self, errMsg):
-        if self._startChecked:
-            self.seek(self._dataSize)
+        #if self._startChecked:
+        #    self.seek(self._dataSize)
+        #logger.debug("Packet stream failed {}".format(errMsg))
+        #logger.debug("stream location after seek data size is {}".format(self._stream.tell()))
         while self._rawAvailable() >= len(self.MAGIC) and self._stream.peek(4) != self.MAGIC:
+            #logger.debug("{} {} {} {}".format(self._stream.peek(4),"doesn't match",self.MAGIC,"so advance 1"))
             self._stream.read(1)
         raise Exception(errMsg)
     
@@ -80,19 +86,20 @@ class PacketFramingStreamAdapter(AbstractStreamAdapter):
         if self._rawAvailable() < self.PREFIX_SIZE:
             self._dataSize = None
         else:
-            magic = self._stream.read(4)
+            prefix = self._stream.peek(self.PREFIX_SIZE)
+            magic, sizeBytes, checkBytes = prefix[:4], prefix[4:8], prefix[8:12] 
             if magic != self.MAGIC:
                 self._fail("Bad Magic Number at Start")
             check = zlib.adler32(magic)
-            sizeBytes = self._stream.read(4)
             size = struct.unpack("!I",sizeBytes)[0]
             check = zlib.adler32(sizeBytes, check)
             
-            checkBytes = self._stream.read(4)
             cmpCheck = struct.unpack("!I", checkBytes)[0]
             if cmpCheck != check:
                 self._fail("Bad Prefix Checksum")
-                
+            
+            # only if we get this far do we actually read out the bytes from the stream
+            self._stream.read(self.PREFIX_SIZE)    
             self._dataSize = size
             self._startChecked = True
             
