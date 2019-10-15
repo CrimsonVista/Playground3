@@ -1,5 +1,6 @@
 from playground.common.datastructures import HierarchicalDictionary
 from playground.common import CustomConstant
+from playground.common import Version as PacketDefinitionVersion
 
 class PacketDefinitionRegistration(object):
     class DefinitionPOD(object):
