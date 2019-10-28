@@ -44,6 +44,9 @@ class MockTransportBase(Transport):
             self.loop.call_later(self.delay, self._close, *args)
         else:
             self._close(*args)
+            
+    def get_extra_info(self, key, default=None):
+        return default
 
 class MockTransportToProtocol(MockTransportBase):
     @classmethod
