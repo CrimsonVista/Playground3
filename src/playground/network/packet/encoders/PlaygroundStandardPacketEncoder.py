@@ -301,7 +301,12 @@ class PacketFieldsEncoder:
         
         for i in range(fieldCount):
             fieldID = yield from stream.unpackIterator(self.FIELD_TAG_PACK_CODE)
-            fieldName = fieldToTag.inverse()[fieldID]
+            fieldName = fieldToTag.inverse().get(fieldID, None)
+            if fieldName == None:
+                if fieldID < 200: # TODO: replace 200 with a constant. Perhaps make Extension Type
+                    raise PacketEncodingError("Unknown field in packet with ID of {}".format(fieldID))
+                else:
+                    logger.debug("Ignored unknown extension field {}".format(fieldID))
             rawField  = packetFields.__getrawfield__(fieldName)
             try:
                 yield from topDecoder.decodeIterator(stream, rawField)
