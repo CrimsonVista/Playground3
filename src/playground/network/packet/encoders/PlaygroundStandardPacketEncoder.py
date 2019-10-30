@@ -22,6 +22,11 @@ DECODE_WAITING_FOR_STREAM = PacketEncoderBase.DECODE_WAITING_FOR_STREAM
 
 UNICODE_ENCODING = "utf-8" # used for converting strings to bytes and back.
 
+class UnknownExtensionFieldError(Exception):
+    def __init__(self, fieldId):
+        super().__init__("Unknown extension field ID {}".format(fieldId))
+        self.fieldId = fieldId
+
 class EncoderStreamAdapter(AbstractStreamAdapter):
 
     def __init__(self, stream, max_size=None):
@@ -306,7 +311,9 @@ class PacketFieldsEncoder:
                 if fieldID < 200: # TODO: replace 200 with a constant. Perhaps make Extension Type
                     raise PacketEncodingError("Unknown field in packet with ID of {}".format(fieldID))
                 else:
-                    logger.debug("Ignored unknown extension field {}".format(fieldID))
+                    logger.debug("Unknown extension field {}".format(fieldID))
+                    # raise an unknown extension field error. Let the outside deside what to do
+                    raise UnknownExtensionFieldError(fieldID)
             rawField  = packetFields.__getrawfield__(fieldName)
             try:
                 yield from topDecoder.decodeIterator(stream, rawField)
@@ -402,6 +409,7 @@ class PacketEncoder:
         basePacketType    = complexType.dataType()
         packetDefinitions = basePacketType.DEFINITIONS_STORE
         packetType = packetDefinitions.getDefinition(name, version)
+        allow_unread_bytes = False
         if not packetType:
             # uh oh. We don't have the definition of this packet. 
             # The encoder assumes an underlying "reliable" stream
@@ -412,7 +420,11 @@ class PacketEncoder:
         else:
             packet = packetType()
             complexType.setData(packet)
-            yield from PacketFieldsEncoder().decodeIterator(stream, complexType, topEncoder)
+            try:
+                yield from PacketFieldsEncoder().decodeIterator(stream, complexType, topEncoder)
+            except UnknownExtensionFieldError as e:
+                logger.debug("Skipping extensions in packet.")
+                allow_unread_bytes = True
         bytesUsed = stream.tell() - packetStartPosition
         unreadBytes = packetLength - bytesUsed
         
@@ -424,7 +436,8 @@ class PacketEncoder:
             # raise an exception so that other parts of the system can identify
             # that we lost a packet. We've advanced the stream, so the system
             # should be able to pick up where it left off.
-            raise Exception("Packet deserialization error. Packet Type={}, Expected Size={}, Actual Size={}".format(packetType, packetLength, bytesUsed))
+            if not allow_unread_bytes:
+                raise Exception("Packet deserialization error. Packet Type={}, Expected Size={}, Actual Size={}".format(packetType, packetLength, bytesUsed))
         if not packetType:
             # We didn't have unused bytes, but we didn't have a packetType. Still an error
             raise Exception("Packet deserialization error. Packet Type={}".format(packetType))
