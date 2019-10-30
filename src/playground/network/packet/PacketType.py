@@ -7,9 +7,16 @@ from playground.network.packet.fieldtypes import NamedPacketType, ComplexFieldTy
                                                     ListFieldType, StringFieldType, PacketFieldType
 from playground.network.packet.fieldtypes.attributes import MaxValue, Bits                                                  
 from .PacketDefinitionRegistration import PacketDefinitionSilo
+from playground.common.logging import Config as LoggingConfig
 
 import logging
 logger = logging.getLogger(__name__)
+
+# deserialization logging is so extreme, we'll do it separately. Normally excluded
+deserialization_logging_prefix = "playground_deserialization"
+deserialization_logger = logging.getLogger(deserialization_logging_prefix+"."+__name__)
+if deserialization_logging_prefix not in LoggingConfig.PLAYGROUND_AUX_LOGGERS:
+    LoggingConfig.PLAYGROUND_AUX_LOGGERS.append(deserialization_logging_prefix)
 
 FIELD_NOT_SET = PacketFieldType.UNSET
 
@@ -187,7 +194,7 @@ class PacketType(NamedPacketType, metaclass=PacketDefinitionLoader):
                 while not exhausted:
                     prefix = self._stream.peek(8) # to see if there was progress
                     try:
-                        logger.debug("{} Deserialize stream at position {}/{}".format(self, self._stream.tell(), self._stream.available()))
+                        deserialization_logger.debug("{} Deserialize stream at position {}/{}".format(self, self._stream.tell(), self._stream.available()))
                         notReady = next(self._iterator)
                         # No more messages until more data. We're done.
                         exhausted = True
@@ -202,7 +209,7 @@ class PacketType(NamedPacketType, metaclass=PacketDefinitionLoader):
                         self._iterator = cls.DeserializeStream(self._stream)
                         
                         # we got a message!
-                        logger.debug("Deserialized message {}. {}/{} bytes available/total".format(result.value, self._stream.available(), self._stream.tell()))
+                        deserialization_logger.debug("Deserialized message {}. {}/{} bytes available/total".format(result.value, self._stream.available(), self._stream.tell()))
                         yield result.value
                     except Exception as error:
                         #raise error
@@ -210,7 +217,7 @@ class PacketType(NamedPacketType, metaclass=PacketDefinitionLoader):
                             # there was no progress. Don't try to deserialize same bytes
                             self._stream.read(1)
                         self._iterator = cls.DeserializeStream(self._stream)
-                        logger.debug("{} deserialization error {}.".format(cls, error))
+                        deserialization_logger.debug("{} deserialization error {}.".format(cls, error))
                         if self._errHandler: self._errhandler.handleException(error)
                         # if no error handler, simply drop errors. Recreate
                         # the stream to get it out of error state

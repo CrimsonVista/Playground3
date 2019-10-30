@@ -38,17 +38,19 @@ class PlaygroundLoggingFilter(logging.Filter):
     def __init__(self, logModules=LOG_ALL_MODULES, logTags=LOG_ALL_TAGS):
         self.configure(logModules, logTags)
         
-    def configure(self, logModules=LOG_ALL_MODULES, logTags=LOG_ALL_TAGS):
+    def configure(self, logModules=LOG_ALL_MODULES, logTags=LOG_ALL_TAGS, excludeTags=None):
         if logModules == self.LOG_ALL_MODULES or not logModules:
             self.globalLogging = True
             self.moduleLogging = []
         else:
             self.globalLogging = False
             self.moduleLogging = logModules
+        self.excludeTags = excludeTags != None and excludTags or []
             
         self.tagLogging = logTags
 
     def logThisTag(self, tagName):
+        if tagName in self.excludeTags: return False
         if self.tagLogging == self.LOG_ALL_TAGS or not tagName: return True
         if not self.tagLogging: return False
         return tagName in self.tagLogging
@@ -59,7 +61,7 @@ class PlaygroundLoggingFilter(logging.Filter):
         if self.globalLogging: 
             return self.logThisTag(loggerTag)
         for loggedModuleName in self.moduleLogging:
-            if loggerName.startswith(loggedModuleName):
+            if loggerName.startswith(loggedModuleName+"."):
                 
                 return self.logThisTag(loggerTag)
         return False
@@ -94,6 +96,10 @@ class PlaygroundLoggingConfiguration(logging.Handler):
     PLAYGROUND_ROOT_LOGGER = "playground"
     
     STDERR_HANDLER = logging.StreamHandler()
+    
+    # These are normally not logged unless explicitly enabled
+    # Modules can add themselves to this
+    PLAYGROUND_AUX_LOGGERS = []
     
     # LOGFILE is defined in the singleton constructor
     
@@ -243,7 +249,11 @@ def EnablePresetLogging(level):
         Config.enableLogging(additionalModules=["asyncio"])
         Config.enableHandler(Config.STDERR_HANDLER, level=logging.NOTSET)
     elif level == PRESET_MAX:
-        raise Exception("Not yet implemented. Maybe will remove.")
+        # logs all messages including those from asyncio to stdout
+        # also includes normally excluded modules
+        Config.enableLogging(additionalModules=["asyncio"]+Config.PLAYGROUND_AUX_LOGGERS)
+        Config.enableHandler(Config.STDERR_HANDLER, level=logging.NOTSET)
+        Config.enableHandler(Config.createRotatingLogFileHandler())
     else:
         raise Exception("Unknown preset log level %s" % level)
     

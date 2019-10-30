@@ -87,3 +87,6 @@ class ListFieldType(ComplexFieldType):
     def __iter__(self):
         for field in self._dataList:
             yield field.data()
+            
+    def __repr__(self):
+        return "ListField({})".format(list(self))
